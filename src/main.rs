@@ -530,38 +530,47 @@ enum INSTRUCTION {
     SLTIU(Destination, Source1, Immediate),
 }
 
-fn assembler_add(rd: u32, rs1: u32, rs2: u32) -> u32 {
-    let opcode: u8 = 0b0110011;
-    // let funct3: u8 = 0b000;
-    // let funct7: u8 = 0b0;
-    let mut x: u32 = 0;
-    x = x | opcode as u32;
-    x = x | rd << 7;
-    x = x | rs1 << 15;
-    x = x | rs2 << 20;
-    x
+// generic instruction builders
+fn assemble_r_type(opcode: u32, funct3: u32, funct7: u32, rd: u32, rs1: u32, rs2: u32) -> u32 {
+    (opcode & 0x7F)
+        | ((rd & 0x1F) << 7)
+        | ((funct3 & 0x7) << 12)
+        | ((rs1 & 0x1F) << 15)
+        | ((rs2 & 0x1F) << 20)
+        | ((funct7 & 0x7F) << 25)
 }
-fn assembler_sub(rd: u32, rs1: u32, rs2: u32) -> u32 {
-    let opcode: u8 = 0b0110011;
-    // let funct3: u8 = 0b000;
-    let funct7: u8 = 0b0100000;
-    let mut x: u32 = 0;
-    x = x | opcode as u32;
-    x = x | rd  << 7;
-    x = x | rs1 << 15;
-    x = x | rs2 << 20;
-    x = x | (funct7 as u32) << 25;
-    x
+
+fn assemble_i_type(opcode: u32, funct3: u32, rd: u32, rs1: u32, imm: u32) -> u32 {
+    (opcode & 0x7F)
+        | ((rd & 0x1F) << 7)
+        | ((funct3 & 0x7) << 12)
+        | ((rs1 & 0x1F) << 15)
+        | ((imm & 0xFFF) << 20)
 }
-fn assemble_addi(rd: u32, rs1: u32, imm: u32) -> u32{
-    let opcode: u8 = 0b0010011;
-    let mut x = 0;
-    x = x | opcode as u32;
-    x = x | rd << 7;
-    x = x | rs1 << 15;
-    x = x | imm << 20;
-    x
-}
+
+// I-Type Arithmetics (Opcode: 0b0010011)
+fn assemble_addi(rd: u32, rs1: u32, imm: u32) -> u32 { assemble_i_type(0b0010011, 0b000, rd, rs1, imm) }
+fn assemble_slti(rd: u32, rs1: u32, imm: u32) -> u32 { assemble_i_type(0b0010011, 0b010, rd, rs1, imm) }
+fn assemble_xori(rd: u32, rs1: u32, imm: u32) -> u32 { assemble_i_type(0b0010011, 0b100, rd, rs1, imm) }
+fn assemble_ori(rd: u32, rs1: u32, imm: u32)  -> u32 { assemble_i_type(0b0010011, 0b110, rd, rs1, imm) }
+fn assemble_andi(rd: u32, rs1: u32, imm: u32) -> u32 { assemble_i_type(0b0010011, 0b111, rd, rs1, imm) }
+
+// I-Type Shifts (Technically I-type, but the top 7 bits of the immediate act as a funct7)
+fn assemble_slli(rd: u32, rs1: u32, shamt: u32) -> u32 { assemble_i_type(0b0010011, 0b001, rd, rs1, shamt & 0x1F) }
+fn assemble_srli(rd: u32, rs1: u32, shamt: u32) -> u32 { assemble_i_type(0b0010011, 0b101, rd, rs1, shamt & 0x1F) }
+// For SRAI, the 10th bit of the immediate field (bit 30 of the instruction) must be 1. (0x400 = 0b0100_0000_0000)
+fn assemble_srai(rd: u32, rs1: u32, shamt: u32) -> u32 { assemble_i_type(0b0010011, 0b101, rd, rs1, (shamt & 0x1F) | 0x400) }
+
+// R-Type Arithmetics (Opcode: 0b0110011)
+fn assemble_add(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b000, 0b0000000, rd, rs1, rs2) }
+fn assemble_sub(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b000, 0b0100000, rd, rs1, rs2) }
+fn assemble_sll(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b001, 0b0000000, rd, rs1, rs2) }
+fn assemble_slt(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b010, 0b0000000, rd, rs1, rs2) }
+fn assemble_xor(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b100, 0b0000000, rd, rs1, rs2) }
+fn assemble_srl(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b101, 0b0000000, rd, rs1, rs2) }
+fn assemble_sra(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b101, 0b0100000, rd, rs1, rs2) }
+fn assemble_or(rd:  u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b110, 0b0000000, rd, rs1, rs2) }
+fn assemble_and(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011, 0b111, 0b0000000, rd, rs1, rs2) }
 
 fn dump(cpu: &CPU) {
     println!("pc = {}", cpu.pc.0);
@@ -575,35 +584,51 @@ fn main() {
     let mut cpu = CPU::new();
     let mut mem = Memory::new();
 
-    // Initial register values
-    cpu.registers[1] = 100;
-    cpu.registers[2] = 25;
-    cpu.registers[3] = 7;
+    // To test negative numbers in I-Type instructions, we cast i32 to u32.
+    // The bitwise masking in our assemblers will grab the correct 12 bits.
+    let minus_16 = -16i32 as u32; 
 
-    // Program:
-    //
-    // x4 = x1 + 10
-    // x5 = x4 + x2
-    // x6 = x5 - x3
-    // x7 = x6 + 1
-    //
-    mem.write32(Address(0),  assemble_addi(4, 1, 10));
-    mem.write32(Address(4),  assembler_add(5, 4, 2));
-    mem.write32(Address(8),  assembler_sub(6, 5, 3));
-    mem.write32(Address(12), assemble_addi(7, 6, 1));
+    // --- Write the program into memory ---
+    let program = [
+        assemble_addi(1, 0, 15),         // pc=0:  x1 = 0 + 15 = 15
+        assemble_addi(2, 0, 20),         // pc=4:  x2 = 0 + 20 = 20
+        assemble_add(3, 1, 2),           // pc=8:  x3 = 15 + 20 = 35
+        assemble_sub(4, 2, 1),           // pc=12: x4 = 20 - 15 = 5
+        assemble_andi(5, 1, 7),          // pc=16: x5 = 15 & 7 = 7
+        assemble_ori(6, 5, 8),           // pc=20: x6 = 7 | 8 = 15
+        assemble_xori(7, 6, 31),         // pc=24: x7 = 15 ^ 31 = 16
+        assemble_slli(8, 7, 2),          // pc=28: x8 = 16 << 2 = 64
+        assemble_srli(9, 8, 1),          // pc=32: x9 = 64 >> 1 = 32
+        assemble_slt(10, 1, 2),          // pc=36: x10 = (15 < 20) = 1
+        assemble_slt(11, 2, 1),          // pc=40: x11 = (20 < 15) = 0
+        assemble_addi(12, 0, minus_16),  // pc=44: x12 = -16 (0xFFFFFFF0)
+        assemble_srai(13, 12, 2),        // pc=48: x13 = -16 >> 2 (arithmetic) = -4 (0xFFFFFFFC)
+    ];
 
-    println!("Before execution:");
-    dump(&cpu);
-
-    for i in 0..4 {
-        println!("Executing instruction {}", i);
-        cpu.step(&mut mem);
-        dump(&cpu);
+    // Load program into our memory layout
+    for (i, &inst) in program.iter().enumerate() {
+        mem.write32(Address((i * 4) as u32), inst);
     }
 
-    println!("Final results:");
-    println!("x4 = {} (expected 110)", cpu.registers[4]);
-    println!("x5 = {} (expected 135)", cpu.registers[5]);
-    println!("x6 = {} (expected 128)", cpu.registers[6]);
-    println!("x7 = {} (expected 129)", cpu.registers[7]);
+    println!("Executing Program...");
+    for i in 0..program.len() {
+        cpu.step(&mut mem);
+    }
+
+    println!("--- Final Register States ---");
+    println!("x1  = {} (Expected: 15)", cpu.registers[1]);
+    println!("x2  = {} (Expected: 20)", cpu.registers[2]);
+    println!("x3  = {} (Expected: 35)", cpu.registers[3]);
+    println!("x4  = {} (Expected: 5)", cpu.registers[4]);
+    println!("x5  = {} (Expected: 7)", cpu.registers[5]);
+    println!("x6  = {} (Expected: 15)", cpu.registers[6]);
+    println!("x7  = {} (Expected: 16)", cpu.registers[7]);
+    println!("x8  = {} (Expected: 64)", cpu.registers[8]);
+    println!("x9  = {} (Expected: 32)", cpu.registers[9]);
+    println!("x10 = {} (Expected: 1)", cpu.registers[10]);
+    println!("x11 = {} (Expected: 0)", cpu.registers[11]);
+    println!("x12 = {} (Expected: 4294967280 / -16)", cpu.registers[12]);
+    println!("x13 = {} (Expected: 4294967292 / -4)", cpu.registers[13]);
+    
+    println!("x0  = {} (Expected: 0)", cpu.registers[0]); 
 }
