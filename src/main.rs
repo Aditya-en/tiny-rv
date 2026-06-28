@@ -236,6 +236,38 @@ impl CPU {
                     _ => panic!("unknown funct3 for STORE opcode 0b0100011"),
                 }
             }
+            0b1100011 => {
+                let funct3 = inst.funct3();
+                let rs1 = inst.rs1();
+                let rs2 = inst.rs2();
+                let imm = inst.b_imm();
+                match funct3.0 {
+                    0b000 => return INSTRUCTION::BEQ(rs1, rs2, imm),
+                    0b001 => return INSTRUCTION::BNE(rs1, rs2, imm),
+                    0b100 => return INSTRUCTION::BLT(rs1, rs2, imm),
+                    0b101 => return INSTRUCTION::BGE(rs1, rs2, imm),
+                    0b110 => return INSTRUCTION::BLTU(rs1, rs2, imm),
+                    0b111 => return INSTRUCTION::BGEU(rs1, rs2, imm),
+                    _ => panic!("unknown funct3 for BRANCH opcode 0b1100011"),
+                }
+            }
+            0b1101111 => {
+                return INSTRUCTION::JAL(inst.rd(), inst.j_imm());
+            }
+            0b1100111 => {
+                let funct3 = inst.funct3();
+                if funct3.0 == 0b000 {
+                    return INSTRUCTION::JALR(inst.rd(), inst.rs1(), inst.i_imm());
+                } else {
+                    panic!("unknown funct3 for JALR opcode");
+                }
+            }
+            0b0110111 => {
+                return INSTRUCTION::LUI(inst.rd(), inst.u_imm());
+            }
+            0b0010111 => {
+                return INSTRUCTION::AUIPC(inst.rd(), inst.u_imm());
+            }
             _ => {
                 panic!("Unknown opcode")
             }
@@ -383,6 +415,66 @@ impl CPU {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = self.registers[rs2.0 as usize];
                 mem.write32(addr, val);
+            }
+            INSTRUCTION::LUI(rd, imm) => {
+                // LUI places the U-immediate value in the top 20 bits of the destination register
+                self.registers[rd.0 as usize] = imm;
+            }
+            INSTRUCTION::AUIPC(rd, imm) => {
+                // AUIPC forms a 32-bit offset from the U-immediate, filling in the lowest 12 bits with zeros, 
+                // and adds it to the address of the AUIPC instruction (PC - 4)
+                let current_pc = self.pc.0.wrapping_sub(4);
+                self.registers[rd.0 as usize] = current_pc.wrapping_add(imm);
+            }
+            INSTRUCTION::JAL(rd, imm) => {
+                // Save the address of the NEXT instruction (which is currently self.pc.0) into rd
+                self.registers[rd.0 as usize] = self.pc.0; 
+                let current_pc = self.pc.0.wrapping_sub(4);
+                self.pc = Address(current_pc.wrapping_add(imm));
+            }
+            INSTRUCTION::JALR(rd, rs1, imm) => {
+                // Save the return address first
+                let return_addr = self.pc.0; 
+                // Target is rs1 + imm, with the least significant bit set to 0 (RISC-V quirk)
+                let target = self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32) & !1;
+                self.pc = Address(target);
+                self.registers[rd.0 as usize] = return_addr;
+            }
+            INSTRUCTION::BEQ(rs1, rs2, imm) => {
+                if self.registers[rs1.0 as usize] == self.registers[rs2.0 as usize] {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
+            }
+            INSTRUCTION::BNE(rs1, rs2, imm) => {
+                if self.registers[rs1.0 as usize] != self.registers[rs2.0 as usize] {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
+            }
+            INSTRUCTION::BLT(rs1, rs2, imm) => {
+                if (self.registers[rs1.0 as usize] as i32) < (self.registers[rs2.0 as usize] as i32) {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
+            }
+            INSTRUCTION::BGE(rs1, rs2, imm) => {
+                if (self.registers[rs1.0 as usize] as i32) >= (self.registers[rs2.0 as usize] as i32) {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
+            }
+            INSTRUCTION::BLTU(rs1, rs2, imm) => {
+                if self.registers[rs1.0 as usize] < self.registers[rs2.0 as usize] {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
+            }
+            INSTRUCTION::BGEU(rs1, rs2, imm) => {
+                if self.registers[rs1.0 as usize] >= self.registers[rs2.0 as usize] {
+                    let current_pc = self.pc.0.wrapping_sub(4);
+                    self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
+                }
             }
             _ => {
                 println!("instruction not implemented")
@@ -620,6 +712,16 @@ enum INSTRUCTION {
     SB(Source1, Source2, Immediate),
     SH(Source1, Source2, Immediate),
     SW(Source1, Source2, Immediate),
+    BEQ(Source1, Source2, Immediate),
+    BNE(Source1, Source2, Immediate),
+    BLT(Source1, Source2, Immediate),
+    BGE(Source1, Source2, Immediate),
+    BLTU(Source1, Source2, Immediate),
+    BGEU(Source1, Source2, Immediate),
+    JAL(Destination, u32),                 
+    JALR(Destination, Source1, Immediate),
+    LUI(Destination, u32),
+    AUIPC(Destination, u32),
 }
 
 // generic instruction builders
@@ -638,6 +740,27 @@ fn assemble_i_type(opcode: u32, funct3: u32, rd: u32, rs1: u32, imm: u32) -> u32
         | ((funct3 & 0x7) << 12)
         | ((rs1 & 0x1F) << 15)
         | ((imm & 0xFFF) << 20)
+}
+
+fn assemble_b_type(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -> u32 {
+    let imm12 = (imm >> 12) & 0x1;
+    let imm10_5 = (imm >> 5) & 0x3F;
+    let imm4_1 = (imm >> 1) & 0xF;
+    let imm11 = (imm >> 11) & 0x1;
+
+    (opcode & 0x7F)
+        | (imm11 << 7)
+        | (imm4_1 << 8)
+        | ((funct3 & 0x7) << 12)
+        | ((rs1 & 0x1F) << 15)
+        | ((rs2 & 0x1F) << 20)
+        | (imm10_5 << 25)
+        | (imm12 << 31)
+}
+
+fn assemble_bne(rs1: u32, rs2: u32, imm: i32) -> u32 {
+    // We cast to u32 so the bitwise ops in assemble_b_type handle the sign correctly
+    assemble_b_type(0b1100011, 0b001, rs1, rs2, imm as u32)
 }
 
 // I-Type Arithmetics (Opcode: 0b0010011)
@@ -676,51 +799,43 @@ fn main() {
     let mut cpu = CPU::new();
     let mut mem = Memory::new();
 
-    // To test negative numbers in I-Type instructions, we cast i32 to u32.
-    // The bitwise masking in our assemblers will grab the correct 12 bits.
-    let minus_16 = -16i32 as u32; 
-
-    // --- Write the program into memory ---
+    // A simple loop:
+    // x1 = 0 (sum)
+    // x2 = 5 (counter)
+    // loop_start:
+    //   x1 = x1 + x2
+    //   x2 = x2 - 1
+    //   if x2 != 0, goto loop_start (PC - 8 bytes)
+    
     let program = [
-        assemble_addi(1, 0, 15),         // pc=0:  x1 = 0 + 15 = 15
-        assemble_addi(2, 0, 20),         // pc=4:  x2 = 0 + 20 = 20
-        assemble_add(3, 1, 2),           // pc=8:  x3 = 15 + 20 = 35
-        assemble_sub(4, 2, 1),           // pc=12: x4 = 20 - 15 = 5
-        assemble_andi(5, 1, 7),          // pc=16: x5 = 15 & 7 = 7
-        assemble_ori(6, 5, 8),           // pc=20: x6 = 7 | 8 = 15
-        assemble_xori(7, 6, 31),         // pc=24: x7 = 15 ^ 31 = 16
-        assemble_slli(8, 7, 2),          // pc=28: x8 = 16 << 2 = 64
-        assemble_srli(9, 8, 1),          // pc=32: x9 = 64 >> 1 = 32
-        assemble_slt(10, 1, 2),          // pc=36: x10 = (15 < 20) = 1
-        assemble_slt(11, 2, 1),          // pc=40: x11 = (20 < 15) = 0
-        assemble_addi(12, 0, minus_16),  // pc=44: x12 = -16 (0xFFFFFFF0)
-        assemble_srai(13, 12, 2),        // pc=48: x13 = -16 >> 2 (arithmetic) = -4 (0xFFFFFFFC)
+        assemble_addi(1, 0, 0),             // pc=0:  x1 = 0
+        assemble_addi(2, 0, 5),             // pc=4:  x2 = 5
+        
+        // --- loop_start ---
+        assemble_add(1, 1, 2),              // pc=8:  x1 = x1 + x2
+        assemble_addi(2, 2, -1i32 as u32),  // pc=12: x2 = x2 - 1
+        assemble_bne(2, 0, -8),             // pc=16: if x2 != 0, jump back 8 bytes (to pc=8)
     ];
 
-    // Load program into our memory layout
+    // Load program into memory
     for (i, &inst) in program.iter().enumerate() {
         mem.write32(Address((i * 4) as u32), inst);
     }
 
     println!("Executing Program...");
-    for i in 0..program.len() {
+    
+    // Instead of stepping exactly program.len() times, we step until 
+    // the Program Counter points to memory AFTER our program ends.
+    // The program is 5 instructions * 4 bytes = 20 bytes long.
+    let mut cycle = 0;
+    while cpu.pc.0 < 20 {
         cpu.step(&mut mem);
+        cycle += 1;
     }
 
+    println!("Program finished in {} cycles.", cycle);
     println!("--- Final Register States ---");
-    println!("x1  = {} (Expected: 15)", cpu.registers[1]);
-    println!("x2  = {} (Expected: 20)", cpu.registers[2]);
-    println!("x3  = {} (Expected: 35)", cpu.registers[3]);
-    println!("x4  = {} (Expected: 5)", cpu.registers[4]);
-    println!("x5  = {} (Expected: 7)", cpu.registers[5]);
-    println!("x6  = {} (Expected: 15)", cpu.registers[6]);
-    println!("x7  = {} (Expected: 16)", cpu.registers[7]);
-    println!("x8  = {} (Expected: 64)", cpu.registers[8]);
-    println!("x9  = {} (Expected: 32)", cpu.registers[9]);
-    println!("x10 = {} (Expected: 1)", cpu.registers[10]);
-    println!("x11 = {} (Expected: 0)", cpu.registers[11]);
-    println!("x12 = {} (Expected: 4294967280 / -16)", cpu.registers[12]);
-    println!("x13 = {} (Expected: 4294967292 / -4)", cpu.registers[13]);
-    
-    println!("x0  = {} (Expected: 0)", cpu.registers[0]); 
+    println!("x1 (Sum)     = {} (Expected: 15)", cpu.registers[1]);
+    println!("x2 (Counter) = {} (Expected: 0)", cpu.registers[2]);
+    println!("x0 (Zero)    = {} (Expected: 0)", cpu.registers[0]); 
 }
