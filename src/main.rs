@@ -1,10 +1,9 @@
-
 #![allow(warnings)]
+use core::prelude::rust_2015;
 use std::{ops::Add, u32};
 
 // constants
 const MEMORY_SIZE:usize = 4*1024*1024;
-
 
 #[derive(Debug)]
 struct CPU {
@@ -40,6 +39,63 @@ impl CPU {
                         let rs1 = inst.rs1();
                         let imm = inst.i_imm();
                         return INSTRUCTION::ADDI(rd, rs1, imm)
+                    }
+                    0b100 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let imm = inst.i_imm();
+                        return INSTRUCTION::XORI(rd, rs1, imm)
+                    }
+                    0b110 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let imm = inst.i_imm();
+                        return INSTRUCTION::ORI(rd, rs1, imm)
+                    }
+                    0b111 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let imm = inst.i_imm();
+                        return INSTRUCTION::ANDI(rd, rs1, imm)
+                    }
+                    0b001 => {
+                        // let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let s1 = inst.rs1();
+                        let shamt = inst.rs2();
+                        return INSTRUCTION::SLLI(rd, s1, shamt)
+                    }
+                    0b101 => {
+                        let funct7 = inst.funct7();
+                        match funct7.0 {
+                            0b0 => {
+                                let rd = inst.rd();
+                                let rs1 = inst.rs1();
+                                let shamt = inst.rs2();
+                                INSTRUCTION::SRLI(rd, rs1, shamt)
+                            }
+                            0b0100000 => {
+                                let rd = inst.rd();
+                                let rs1 = inst.rs1();
+                                let shamt = inst.rs2();
+                                INSTRUCTION::SRAI(rd, rs1, shamt)
+                            }
+                            _ => {
+                                panic!("unknown funct7 {:08b} for funct3 {:08b} for opcode {:08b}", funct7.0, funct3.0, opcode.0)
+                            }
+                        }
+                    }
+                    0b010 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let imm = inst.i_imm();
+                        return INSTRUCTION::SLTI(rd, rs1, imm)
+                    }
+                    0b011 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let imm = inst.i_imm();
+                        return INSTRUCTION::SLTIU(rd, rs1, imm)
                     }
                     _ => {
                         panic!("unknown funct3 with opcode 0b0010011")
@@ -111,6 +167,44 @@ impl CPU {
                             }
                         }
                     }
+                    0b001 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let rs2 = inst.rs2();
+                        return INSTRUCTION::SLL(rd, rs1, rs2)
+                    }
+                    0b101 => {
+                        let funct7 = inst.funct7();
+                        match funct7.0 {
+                            0b0 => {
+                                let rd = inst.rd();
+                                let rs1 = inst.rs1();
+                                let rs2 = inst.rs2();
+                                return INSTRUCTION::SRL(rd, rs1, rs2)
+                            }
+                            0b0100000 => {
+                                let rd = inst.rd();
+                                let rs1 = inst.rs1();
+                                let rs2 = inst.rs2();
+                                return INSTRUCTION::SRA(rd, rs1, rs2)
+                            }
+                            _ => {
+                                panic!("unknown funct7 {:08b} for funct3 {:08b} for opcode {:08b}", funct7.0, funct3.0, opcode.0)
+                            }
+                        }
+                    }
+                    0b010 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let rs2 = inst.rs2();
+                        return INSTRUCTION::SLT(rd, rs1, rs2)
+                    }
+                    0b011 => {
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let rs2 = inst.rs2();
+                        return INSTRUCTION::SLT(rd, rs1, rs2)
+                    }
                     _ => {
                         panic!("unknown funct3 with opcode 0b0110011")
                     }
@@ -151,6 +245,78 @@ impl CPU {
             INSTRUCTION::XOR(rd, rs1, rs2) => {
                 let x = self.registers[rs1.0 as usize] ^ (self.registers[rs2.0 as usize]);
                 self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::ANDI(rd, rs1, imm ) => {
+                let x = self.registers[rs1.0 as usize] & imm.0 as u32;
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::ORI(rd, rs1, imm ) => {
+                let x = self.registers[rs1.0 as usize] | imm.0 as u32;
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::XORI(rd, rs1, imm ) => {
+                let x = self.registers[rs1.0 as usize] ^ imm.0 as u32;
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::SLLI(rd, rs1, shamt ) => {
+                let x = self.registers[rs1.0 as usize] << ((shamt.0 as u32) & 0b1_1111); 
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::SRLI(rd, rs1, shamt ) => {
+                let x = self.registers[rs1.0 as usize] >> ((shamt.0 as u32) & 0b1_1111); 
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::SRLI(rd, rs1, shamt ) => {
+                let x = (self.registers[rs1.0 as usize] as i32) >> ((shamt.0 as u32) & 0b1_1111); 
+                self.registers[rd.0 as usize] = x as u32;
+            }
+            INSTRUCTION::SRAI(rd, rs1, shamt) => {
+                let x = (self.registers[rs1.0 as usize] as i32) >> ((shamt.0 as u32) & 0b1_1111);
+                self.registers[rd.0 as usize] = x as u32;
+            }
+            INSTRUCTION::SLL(rd, rs1, rs2  ) => {
+                let x = self.registers[rs1.0 as usize] << (self.registers[rs2.0 as usize]); 
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::SRL(rd, rs1, rs2  ) => {
+                let x = self.registers[rs1.0 as usize] >> (self.registers[rs2.0 as usize]); 
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::SRA(rd, rs1, rs2  ) => {
+                let x = (self.registers[rs1.0 as usize] as i32) >> (self.registers[rs2.0 as usize]); 
+                self.registers[rd.0 as usize] = x as u32;
+            }
+            INSTRUCTION::SLT(rd, rs1,rs2 ) => {
+                let x = (self.registers[rs1.0 as usize] as i32)< self.registers[rs2.0 as usize] as i32; 
+                if x {
+                    self.registers[rd.0 as usize] = 1;
+                } else {
+                    self.registers[rd.0 as usize] = 0;
+                }
+            }
+            INSTRUCTION::SLTU(rd, rs1,rs2 ) => {
+                let x = self.registers[rs1.0 as usize] < self.registers[rs2.0 as usize]; 
+                if x {
+                    self.registers[rd.0 as usize] = 1;
+                } else {
+                    self.registers[rd.0 as usize] = 0;
+                }
+            }
+            INSTRUCTION::SLTI(rd, rs1,imm ) => {
+                let x = (self.registers[rs1.0 as usize] as i32) < imm.0; 
+                if x {
+                    self.registers[rd.0 as usize] = 1;
+                } else {
+                    self.registers[rd.0 as usize] = 0;
+                }
+            }
+            INSTRUCTION::SLTIU(rd, rs1,imm ) => {
+                let x = self.registers[rs1.0 as usize] < imm.0 as u32; 
+                if x {
+                    self.registers[rd.0 as usize] = 1;
+                } else {
+                    self.registers[rd.0 as usize] = 0;
+                }
             }
             _ => {
                 println!("instruction not implemented")
@@ -283,18 +449,33 @@ impl RawInstruction {
         Immediate::new(code as u16) // will fit as only 12 bits are used
     }
     fn b_imm(&self) -> Immediate {
-        // TODO can't understand this :(
-        Immediate(0)
+        let bit_12 = (self.0 >> 31) & 0x1;
+        let bit_11 = (self.0 >> 7) & 0x1;
+        let bits_10_5 = (self.0 >> 25) & 0x3F;
+        let bits_4_1 = (self.0 >> 8) & 0xF;
+
+        let mut imm = (bit_12 << 12) | (bit_11 << 11) | (bits_10_5 << 5) | (bits_4_1 << 1);
+        if bit_12 == 1 {
+            imm |= 0xFFFF_E000; // Sign extend
+        }
+        Immediate(imm as i32)
     }
     fn u_imm(&self) -> u32 {
         let code = self.0 & u32::MAX<<12;
         code
     }
     fn j_imm(&self) -> u32 {
-        // TODO can't understand this :(
-        0
-    }
+        let bit_20 = (self.0 >> 31) & 0x1;
+        let bits_19_12 = (self.0 >> 12) & 0xFF;
+        let bit_11 = (self.0 >> 20) & 0x1;
+        let bits_10_1 = (self.0 >> 21) & 0x3FF;
 
+        let mut imm = (bit_20 << 20) | (bits_19_12 << 12) | (bit_11 << 11) | (bits_10_1 << 1);
+        if bit_20 == 1 {
+            imm |= 0xFFE0_0000; // Sign extend
+        }
+        imm
+    }
 }
 #[derive(Debug)]
 struct Opcode(u8);
@@ -329,11 +510,24 @@ impl Funct7 {
 #[derive(Debug)]
 enum INSTRUCTION {
     ADDI(Destination, Source1, Immediate),
+    XORI(Destination, Source1, Immediate),
+    ANDI(Destination, Source1, Immediate),
+    ORI(Destination, Source1, Immediate),
     ADD(Destination, Source1, Source2),
     SUB(Destination, Source1, Source2),
     AND(Destination, Source1, Source2),
     OR(Destination, Source1, Source2),
-    XOR(Destination, Source1, Source2)
+    XOR(Destination, Source1, Source2),
+    SLLI(Destination, Source1, Source2),
+    SRLI(Destination, Source1, Source2),
+    SRAI(Destination, Source1, Source2),
+    SLL(Destination, Source1, Source2),
+    SRL(Destination, Source1, Source2),
+    SRA(Destination, Source1, Source2),
+    SLT(Destination, Source1, Source2),
+    SLTU(Destination, Source1, Source2),
+    SLTI(Destination, Source1, Immediate),
+    SLTIU(Destination, Source1, Immediate),
 }
 
 fn assembler_add(rd: u32, rs1: u32, rs2: u32) -> u32 {
