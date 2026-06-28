@@ -210,6 +210,32 @@ impl CPU {
                     }
                 }
             }
+            0b0000011 => {
+                let funct3 = inst.funct3();
+                let rd = inst.rd();
+                let rs1 = inst.rs1();
+                let imm = inst.i_imm();
+                match funct3.0 {
+                    0b000 => return INSTRUCTION::LB(rd, rs1, imm),
+                    0b001 => return INSTRUCTION::LH(rd, rs1, imm),
+                    0b010 => return INSTRUCTION::LW(rd, rs1, imm),
+                    0b100 => return INSTRUCTION::LBU(rd, rs1, imm),
+                    0b101 => return INSTRUCTION::LHU(rd, rs1, imm),
+                    _ => panic!("unknown funct3 for LOAD opcode 0b0000011"),
+                }
+            }
+            0b0100011 => {
+                let funct3 = inst.funct3();
+                let rs1 = inst.rs1();
+                let rs2 = inst.rs2();
+                let imm = inst.s_imm();
+                match funct3.0 {
+                    0b000 => return INSTRUCTION::SB(rs1, rs2, imm),
+                    0b001 => return INSTRUCTION::SH(rs1, rs2, imm),
+                    0b010 => return INSTRUCTION::SW(rs1, rs2, imm),
+                    _ => panic!("unknown funct3 for STORE opcode 0b0100011"),
+                }
+            }
             _ => {
                 panic!("Unknown opcode")
             }
@@ -318,6 +344,46 @@ impl CPU {
                     self.registers[rd.0 as usize] = 0;
                 }
             }
+            INSTRUCTION::LB(rd, rs1, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                let val = mem.read(addr);
+                // Cast to i8 to preserve sign, then up to i32/u32 for sign-extension
+                self.registers[rd.0 as usize] = (val as i8) as i32 as u32; 
+            }
+            INSTRUCTION::LH(rd, rs1, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                let val = mem.read16(addr);
+                // Cast to i16 for sign-extension
+                self.registers[rd.0 as usize] = (val as i16) as i32 as u32; 
+            }
+            INSTRUCTION::LW(rd, rs1, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                self.registers[rd.0 as usize] = mem.read32(addr);
+            }
+            INSTRUCTION::LBU(rd, rs1, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                // Unsigned: No sign extension, just pad with zeros
+                self.registers[rd.0 as usize] = mem.read(addr) as u32; 
+            }
+            INSTRUCTION::LHU(rd, rs1, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                self.registers[rd.0 as usize] = mem.read16(addr) as u32; 
+            }
+            INSTRUCTION::SB(rs1, rs2, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                let val = (self.registers[rs2.0 as usize] & 0xFF) as u8;
+                mem.write(addr, val);
+            }
+            INSTRUCTION::SH(rs1, rs2, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                let val = (self.registers[rs2.0 as usize] & 0xFFFF) as u16;
+                mem.write16(addr, val);
+            }
+            INSTRUCTION::SW(rs1, rs2, imm) => {
+                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
+                let val = self.registers[rs2.0 as usize];
+                mem.write32(addr, val);
+            }
             _ => {
                 println!("instruction not implemented")
             }
@@ -359,17 +425,17 @@ impl Memory {
     fn new() -> Self {
         Self { data: vec![0; MEMORY_SIZE] }
     }
-    fn read(&self, add: Address) -> u8 {
-        if add.0 as usize >= MEMORY_SIZE {
-            panic!("invalid memory read: Out of Bounds")
-        }
-        return self.data[add.0 as usize]
-    }
     fn write(&mut self, add: Address, value: u8) {
         if add.0 as usize >= MEMORY_SIZE {
             panic!("invalid memory write: Out of Bounds")
         }
         self.data[add.0 as usize] = value
+    }
+    fn write16(&mut self, add: Address, value: u16) {
+        let b1 = (value & 0xFF) as u8;
+        let b2 = (value >> 8) as u8;
+        self.write(add, b1);
+        self.write(add + Address(1), b2);
     }
     fn write32(&mut self, add: Address, value: u32) {
         if (add + Address(4)).0 as usize >= MEMORY_SIZE {
@@ -390,6 +456,24 @@ impl Memory {
             self.write(add + Address(i as u32), bytes[i]);
             i += 1;
         }
+    }
+    fn read(&self, add: Address) -> u8 {
+        if add.0 as usize >= MEMORY_SIZE {
+            panic!("invalid memory read: Out of Bounds")
+        }
+        return self.data[add.0 as usize]
+    }
+    fn read16(&self, add: Address) -> u16 {
+        let b1 = self.read(add) as u16;
+        let b2 = self.read(add + Address(1)) as u16;
+        b1 | (b2 << 8)
+    }
+    fn read32(&self, add: Address) -> u32 {
+        let b1 = self.read(add) as u32;
+        let b2 = self.read(add + Address(1)) as u32;
+        let b3 = self.read(add + Address(2)) as u32;
+        let b4 = self.read(add + Address(3)) as u32;
+        b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
     }
 }
 
@@ -528,6 +612,14 @@ enum INSTRUCTION {
     SLTU(Destination, Source1, Source2),
     SLTI(Destination, Source1, Immediate),
     SLTIU(Destination, Source1, Immediate),
+    LB(Destination, Source1, Immediate),
+    LH(Destination, Source1, Immediate),
+    LW(Destination, Source1, Immediate),
+    LBU(Destination, Source1, Immediate),
+    LHU(Destination, Source1, Immediate),
+    SB(Source1, Source2, Immediate),
+    SH(Source1, Source2, Immediate),
+    SW(Source1, Source2, Immediate),
 }
 
 // generic instruction builders
