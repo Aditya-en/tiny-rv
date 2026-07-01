@@ -1,5 +1,4 @@
 #![allow(warnings)]
-use core::prelude::rust_2015;
 use std::{ops::Add, u32};
 
 // constants
@@ -324,7 +323,7 @@ impl CPU {
                 let x = self.registers[rs1.0 as usize] >> ((shamt.0 as u32) & 0b1_1111); 
                 self.registers[rd.0 as usize] = x;
             }
-            INSTRUCTION::SRLI(rd, rs1, shamt ) => {
+            INSTRUCTION::SRAI(rd, rs1, shamt ) => {
                 let x = (self.registers[rs1.0 as usize] as i32) >> ((shamt.0 as u32) & 0b1_1111); 
                 self.registers[rd.0 as usize] = x as u32;
             }
@@ -530,8 +529,8 @@ impl Memory {
         self.write(add + Address(1), b2);
     }
     fn write32(&mut self, add: Address, value: u32) {
-        if (add + Address(4)).0 as usize >= MEMORY_SIZE {
-            panic!("invalid memory write: Out of Bounds")
+        if (add.0 as usize + 3) >= MEMORY_SIZE {
+            panic!("invalid memory write32: Out of Bounds at address {:#X}", add.0);
         }
         let b1 = (value >> 24) as u8;
         let b2 = (value >> 16 & 0b1111_1111) as u8;
@@ -561,6 +560,9 @@ impl Memory {
         b1 | (b2 << 8)
     }
     fn read32(&self, add: Address) -> u32 {
+        if (add.0 as usize + 3) >= MEMORY_SIZE {
+            panic!("invalid memory read32: Out of Bounds at address {:#X}", add.0);
+        }
         let b1 = self.read(add) as u32;
         let b2 = self.read(add + Address(1)) as u32;
         let b3 = self.read(add + Address(2)) as u32;
@@ -789,53 +791,53 @@ fn assemble_and(rd: u32, rs1: u32, rs2: u32) -> u32 { assemble_r_type(0b0110011,
 
 fn dump(cpu: &CPU) {
     println!("pc = {}", cpu.pc.0);
-    for i in 0..8 {
+    for i in 0..32 {
         println!("x{:02} = {}", i, cpu.registers[i]);
     }
-    println!("-------------------------");
 }
+
+use std::fs::File;
+use std::io::Read;
 
 fn main() {
     let mut cpu = CPU::new();
     let mut mem = Memory::new();
 
-    // A simple loop:
-    // x1 = 0 (sum)
-    // x2 = 5 (counter)
-    // loop_start:
-    //   x1 = x1 + x2
-    //   x2 = x2 - 1
-    //   if x2 != 0, goto loop_start (PC - 8 bytes)
-    
-    let program = [
-        assemble_addi(1, 0, 0),             // pc=0:  x1 = 0
-        assemble_addi(2, 0, 5),             // pc=4:  x2 = 5
-        
-        // --- loop_start ---
-        assemble_add(1, 1, 2),              // pc=8:  x1 = x1 + x2
-        assemble_addi(2, 2, -1i32 as u32),  // pc=12: x2 = x2 - 1
-        assemble_bne(2, 0, -8),             // pc=16: if x2 != 0, jump back 8 bytes (to pc=8)
-    ];
+    // 1. Read the raw binary from disk
+    let mut file = File::open("main.bin").expect("Failed to open main.bin");
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).expect("Failed to read file");
 
-    // Load program into memory
-    for (i, &inst) in program.iter().enumerate() {
-        mem.write32(Address((i * 4) as u32), inst);
+    // 2. Load it into our emulated RAM starting at address 0
+    for (i, &byte) in buffer.iter().enumerate() {
+        mem.write(Address(i as u32), byte);
     }
 
-    println!("Executing Program...");
+    // 3. Set up a Stack Pointer
+    cpu.registers[2] = (MEMORY_SIZE as u32) - 16;
+    println!("Executing C program...");
     
-    // Instead of stepping exactly program.len() times, we step until 
-    // the Program Counter points to memory AFTER our program ends.
-    // The program is 5 instructions * 4 bytes = 20 bytes long.
-    let mut cycle = 0;
-    while cpu.pc.0 < 20 {
+    // 4. Run the CPU loop
+    // Because the C code ends in an infinite while(1) loop (jumping to itself), 
+    // we need to detect when the PC stops moving forward.
+    let mut last_pc = 0xFFFF_FFFF;
+    let mut cycles = 0;
+    
+    loop {
         cpu.step(&mut mem);
-        cycle += 1;
+        cycles += 1;
+        
+        if cpu.pc.0 == last_pc {
+            println!("CPU halted at pc={}", cpu.pc.0);
+            break;
+        }
+        last_pc = cpu.pc.0;
+        
+        if cycles > 100_000 {
+            println!("Timeout reached.");
+            break;
+        }
     }
 
-    println!("Program finished in {} cycles.", cycle);
-    println!("--- Final Register States ---");
-    println!("x1 (Sum)     = {} (Expected: 15)", cpu.registers[1]);
-    println!("x2 (Counter) = {} (Expected: 0)", cpu.registers[2]);
-    println!("x0 (Zero)    = {} (Expected: 0)", cpu.registers[0]); 
+    dump(&cpu);
 }
