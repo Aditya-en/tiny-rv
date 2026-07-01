@@ -1,5 +1,6 @@
 #![allow(warnings)]
 use std::{ops::Add, u32};
+use std::collections::VecDeque;
 
 // constants
 const MEMORY_SIZE:usize = 4*1024*1024;
@@ -14,7 +15,7 @@ impl CPU {
     fn new() -> Self {
         Self { registers: [0; 32],  pc: Address(0x0) }
     }
-    fn fetch(&mut self, bus: &Bus) -> RawInstruction {
+    fn fetch(&mut self, bus: &mut Bus) -> RawInstruction {
         let b1 = bus.read8(self.pc) as u32;
         let b2 = bus.read8(self.pc + Address(1)) as u32;
         let b3 = bus.read8(self.pc + Address(2)) as u32;
@@ -505,7 +506,7 @@ impl RegisterIndex{
 }
 
 trait Device {
-    fn read8(&self, addr: Address) -> u8;
+    fn read8(&mut self, addr: Address) -> u8;
     fn write8(&mut self, addr: Address, data: u8);
 }
 
@@ -520,7 +521,7 @@ impl Memory {
 }
 
 impl Device for Memory {
-    fn read8(&self, addr: Address) -> u8 {
+    fn read8(&mut self, addr: Address) -> u8 {
         if addr.0 as usize >= MEMORY_SIZE {
             panic!("invalid memory read: Out of Bounds")
         }
@@ -562,20 +563,20 @@ impl Bus {
     fn add_device(&mut self, m_device: MappedDevice) {
         self.devices.push(m_device);
     }
-    fn read8(&self, addr: Address) -> u8 {
-        let device = self.get_device(addr);
-        device.0.read8(device.1)
+    fn read8(&mut self, addr: Address) -> u8 {
+        let (device, offset) = self.get_device_mut(addr);
+        device.read8(offset)
     }
     fn write8(&mut self, addr: Address, data: u8) {
         let device = self.get_device_mut(addr);
         device.0.write8(device.1, data);
     }
-    fn read16(&self, addr: Address) -> u16 {
+    fn read16(&mut self, addr: Address) -> u16 {
         let b1 = self.read8(addr) as u16;
         let b2 = self.read8(addr + Address(1)) as u16;
         b1 | (b2 << 8)
     }
-    fn read32(&self, addr: Address) -> u32 {
+    fn read32(&mut self, addr: Address) -> u32 {
         let b1 = self.read8(addr) as u32;
         let b2 = self.read8(addr + Address(1)) as u32;
         let b3 = self.read8(addr + Address(2)) as u32;
@@ -594,7 +595,62 @@ impl Bus {
     }
 }
 
+struct UART {
+    rx: VecDeque<u8>,
+}
 
+impl UART {
+    const DATA: u32 = 0;
+    const STATUS: u32 = 4;
+    const CONTROL: u32 = 8;
+
+    fn new() -> Self {
+        Self {
+            rx: VecDeque::new(),
+        }
+    }
+
+    // Host injects a received byte.
+    pub fn receive_byte(&mut self, byte: u8) {
+        self.rx.push_back(byte);
+    }
+}
+
+impl Device for UART {
+    fn read8(&mut self, offset: Address) -> u8 {
+        match offset.0 {
+            Self::DATA => {
+                self.rx.pop_front().unwrap_or(0)
+            }
+
+            Self::STATUS => {
+                if self.rx.is_empty() {
+                    0
+                } else {
+                    1
+                }
+            }
+
+            Self::CONTROL => 0,
+
+            _ => panic!("invalid UART register"),
+        }
+    }
+
+    fn write8(&mut self, offset: Address, value: u8) {
+        match offset.0 {
+            Self::DATA => {
+                print!("{}", value as char);
+            }
+
+            Self::STATUS => {}
+
+            Self::CONTROL => {}
+
+            _ => panic!("invalid UART register"),
+        }
+    }
+}
 
 type Destination = RegisterIndex;
 type Source1 = RegisterIndex;
@@ -834,41 +890,23 @@ fn dump(cpu: &CPU) {
     }
 }
 
-use std::fs::File;
-use std::io::Read;
 
 fn main() {
-    let mut machine = init_vm();
+    let mut uart = UART::new();
 
-    let mut file = File::open("main.bin").expect("Failed to open main.bin");
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).expect("Failed to read file");
+    println!("UART Direct Test");
 
-    for (i, &byte) in buffer.iter().enumerate() {
-        machine.bus.write8(Address(i as u32), byte);
-    }
+    uart.receive_byte(b'H');
+    uart.receive_byte(b'i');
 
-    machine.cpu.registers[2] = (MEMORY_SIZE as u32) - 16;
-    println!("Executing C program...");
+    println!("Status = {}", uart.read8(Address(UART::STATUS)));
+    println!("{}", uart.read8(Address(UART::DATA)) as char);
 
-    let mut last_pc = 0xFFFF_FFFF;
-    let mut cycles = 0;
+    println!("Status = {}", uart.read8(Address(UART::STATUS)));
+    println!("{}", uart.read8(Address(UART::DATA)) as char);
 
-    loop {
-        machine.cpu.step(&mut machine.bus);
-        cycles += 1;
+    println!("Status = {}", uart.read8(Address(UART::STATUS)));
 
-        if machine.cpu.pc.0 == last_pc {
-            println!("CPU halted at pc={}", machine.cpu.pc.0);
-            break;
-        }
-        last_pc = machine.cpu.pc.0;
-
-        if cycles > 100_000 {
-            println!("Timeout reached.");
-            break;
-        }
-    }
-
-    dump(&machine.cpu);
+    uart.write8(Address(UART::DATA), b'!');
+    println!();
 }
