@@ -14,11 +14,11 @@ impl CPU {
     fn new() -> Self {
         Self { registers: [0; 32],  pc: Address(0x0) }
     }
-    fn fetch(&mut self, mem: &Memory) -> RawInstruction {
-        let b1 = mem.read(self.pc) as u32;
-        let b2 = mem.read(self.pc + Address(1)) as u32;
-        let b3 = mem.read(self.pc + Address(2)) as u32;
-        let b4 = mem.read(self.pc + Address(3)) as u32;
+    fn fetch(&mut self, bus: &Bus) -> RawInstruction {
+        let b1 = bus.read8(self.pc) as u32;
+        let b2 = bus.read8(self.pc + Address(1)) as u32;
+        let b3 = bus.read8(self.pc + Address(2)) as u32;
+        let b4 = bus.read8(self.pc + Address(3)) as u32;
         let inst : u32 = b4 << 24 | b3 << 16 | b2 << 8 | b1;
 
         self.pc = self.pc + Address(4);
@@ -273,7 +273,7 @@ impl CPU {
         }
 
     }
-    fn execute(&mut self, inst: INSTRUCTION,  mem: &mut Memory) {
+    fn execute(&mut self, inst: INSTRUCTION,  bus: &mut Bus) {
         match inst {
             INSTRUCTION::ADDI(rd, rs1, imm ) => {
                 let x = self.registers[rs1.0 as usize]
@@ -327,10 +327,6 @@ impl CPU {
                 let x = (self.registers[rs1.0 as usize] as i32) >> ((shamt.0 as u32) & 0b1_1111); 
                 self.registers[rd.0 as usize] = x as u32;
             }
-            INSTRUCTION::SRAI(rd, rs1, shamt) => {
-                let x = (self.registers[rs1.0 as usize] as i32) >> ((shamt.0 as u32) & 0b1_1111);
-                self.registers[rd.0 as usize] = x as u32;
-            }
             INSTRUCTION::SLL(rd, rs1, rs2  ) => {
                 let x = self.registers[rs1.0 as usize] << (self.registers[rs2.0 as usize]); 
                 self.registers[rd.0 as usize] = x;
@@ -377,43 +373,43 @@ impl CPU {
             }
             INSTRUCTION::LB(rd, rs1, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                let val = mem.read(addr);
+                let val = bus.read8(addr);
                 // Cast to i8 to preserve sign, then up to i32/u32 for sign-extension
                 self.registers[rd.0 as usize] = (val as i8) as i32 as u32; 
             }
             INSTRUCTION::LH(rd, rs1, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                let val = mem.read16(addr);
+                let val = bus.read16(addr);
                 // Cast to i16 for sign-extension
                 self.registers[rd.0 as usize] = (val as i16) as i32 as u32; 
             }
             INSTRUCTION::LW(rd, rs1, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                self.registers[rd.0 as usize] = mem.read32(addr);
+                self.registers[rd.0 as usize] = bus.read32(addr);
             }
             INSTRUCTION::LBU(rd, rs1, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 // Unsigned: No sign extension, just pad with zeros
-                self.registers[rd.0 as usize] = mem.read(addr) as u32; 
+                self.registers[rd.0 as usize] = bus.read8(addr) as u32; 
             }
             INSTRUCTION::LHU(rd, rs1, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                self.registers[rd.0 as usize] = mem.read16(addr) as u32; 
+                self.registers[rd.0 as usize] = bus.read16(addr) as u32; 
             }
             INSTRUCTION::SB(rs1, rs2, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = (self.registers[rs2.0 as usize] & 0xFF) as u8;
-                mem.write(addr, val);
+                bus.write8(addr, val);
             }
             INSTRUCTION::SH(rs1, rs2, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = (self.registers[rs2.0 as usize] & 0xFFFF) as u16;
-                mem.write16(addr, val);
+                bus.write16(addr, val);
             }
             INSTRUCTION::SW(rs1, rs2, imm) => {
                 let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = self.registers[rs2.0 as usize];
-                mem.write32(addr, val);
+                bus.write32(addr, val);
             }
             INSTRUCTION::LUI(rd, imm) => {
                 // LUI places the U-immediate value in the top 20 bits of the destination register
@@ -481,10 +477,10 @@ impl CPU {
         }
         self.registers[0] = 0; // after executing any instruction ensure x0 is always 0
     }
-    fn step(&mut self, mem: &mut Memory) {
-        let raw_inst = self.fetch(mem);
+    fn step(&mut self, bus: &mut Bus) {
+        let raw_inst = self.fetch(bus);
         let inst = CPU::decode(raw_inst);
-        self.execute(inst, mem);
+        self.execute(inst, bus);
     }
 
 }
@@ -508,6 +504,11 @@ impl RegisterIndex{
     }
 }
 
+trait Device {
+    fn read8(&self, addr: Address) -> u8;
+    fn write8(&mut self, addr: Address, data: u8);
+}
+
 struct Memory{
     data: Vec<u8>
 }
@@ -516,60 +517,84 @@ impl Memory {
     fn new() -> Self {
         Self { data: vec![0; MEMORY_SIZE] }
     }
-    fn write(&mut self, add: Address, value: u8) {
-        if add.0 as usize >= MEMORY_SIZE {
-            panic!("invalid memory write: Out of Bounds")
-        }
-        self.data[add.0 as usize] = value
-    }
-    fn write16(&mut self, add: Address, value: u16) {
-        let b1 = (value & 0xFF) as u8;
-        let b2 = (value >> 8) as u8;
-        self.write(add, b1);
-        self.write(add + Address(1), b2);
-    }
-    fn write32(&mut self, add: Address, value: u32) {
-        if (add.0 as usize + 3) >= MEMORY_SIZE {
-            panic!("invalid memory write32: Out of Bounds at address {:#X}", add.0);
-        }
-        let b1 = (value >> 24) as u8;
-        let b2 = (value >> 16 & 0b1111_1111) as u8;
-        let b3 = (value >> 8 & 0b1111_1111) as u8;
-        let b4 = (value & 0b1111_1111) as u8;
-        self.write(add, b4);
-        self.write(add + Address(1), b3);
-        self.write(add + Address(2), b2);
-        self.write(add + Address(3), b1);
-    }
-    fn write_n(&mut self, add: Address, bytes: &[u8]){
-        let mut i = 0;
-        while i < bytes.len() {
-            self.write(add + Address(i as u32), bytes[i]);
-            i += 1;
-        }
-    }
-    fn read(&self, add: Address) -> u8 {
-        if add.0 as usize >= MEMORY_SIZE {
+}
+
+impl Device for Memory {
+    fn read8(&self, addr: Address) -> u8 {
+        if addr.0 as usize >= MEMORY_SIZE {
             panic!("invalid memory read: Out of Bounds")
         }
-        return self.data[add.0 as usize]
+        return self.data[addr.0 as usize]
     }
-    fn read16(&self, add: Address) -> u16 {
-        let b1 = self.read(add) as u16;
-        let b2 = self.read(add + Address(1)) as u16;
-        b1 | (b2 << 8)
-    }
-    fn read32(&self, add: Address) -> u32 {
-        if (add.0 as usize + 3) >= MEMORY_SIZE {
-            panic!("invalid memory read32: Out of Bounds at address {:#X}", add.0);
+    fn write8(&mut self, addr: Address, data: u8) {
+        if addr.0 as usize >= MEMORY_SIZE {
+            panic!("invalid memory write: Out of Bounds")
         }
-        let b1 = self.read(add) as u32;
-        let b2 = self.read(add + Address(1)) as u32;
-        let b3 = self.read(add + Address(2)) as u32;
-        let b4 = self.read(add + Address(3)) as u32;
-        b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+        self.data[addr.0 as usize] = data
     }
 }
+
+struct MappedDevice(Address, Address, Box<dyn Device>);
+struct Bus {
+    devices: Vec<MappedDevice>
+}
+
+impl Bus {
+    fn new() -> Self {
+        Bus {devices: Vec::new()}
+    }
+    fn get_device(&self, addr: Address) -> (&dyn Device, Address) {
+        for d in &self.devices {
+            if ( d.0.0 <= addr.0 ) && (d.1.0 >= addr.0 ){
+                return (d.2.as_ref(), Address(addr.0 - d.0.0));
+            }
+        }
+        panic!("device not found with address {:?}", addr);
+    }
+    fn get_device_mut(&mut self, addr: Address) -> (&mut dyn Device, Address) {
+        for d in &mut self.devices {
+            if ( d.0.0 <= addr.0 ) && (d.1.0 >= addr.0 ){
+                return (d.2.as_mut(), Address(addr.0 - d.0.0));
+            }
+        }
+        panic!("device not found with address {:?}", addr);
+    }
+    fn add_device(&mut self, m_device: MappedDevice) {
+        self.devices.push(m_device);
+    }
+    fn read8(&self, addr: Address) -> u8 {
+        let device = self.get_device(addr);
+        device.0.read8(device.1)
+    }
+    fn write8(&mut self, addr: Address, data: u8) {
+        let device = self.get_device_mut(addr);
+        device.0.write8(device.1, data);
+    }
+    fn read16(&self, addr: Address) -> u16 {
+        let b1 = self.read8(addr) as u16;
+        let b2 = self.read8(addr + Address(1)) as u16;
+        b1 | (b2 << 8)
+    }
+    fn read32(&self, addr: Address) -> u32 {
+        let b1 = self.read8(addr) as u32;
+        let b2 = self.read8(addr + Address(1)) as u32;
+        let b3 = self.read8(addr + Address(2)) as u32;
+        let b4 = self.read8(addr + Address(3)) as u32;
+        b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+    }
+    fn write16(&mut self, addr: Address, value: u16) {
+        self.write8(addr, (value & 0xFF) as u8);
+        self.write8(addr + Address(1), (value >> 8) as u8);
+    }
+    fn write32(&mut self, addr: Address, value: u32) {
+        self.write8(addr, (value & 0xFF) as u8);
+        self.write8(addr + Address(1), ((value >> 8) & 0xFF) as u8);
+        self.write8(addr + Address(2), ((value >> 16) & 0xFF) as u8);
+        self.write8(addr + Address(3), ((value >> 24) & 0xFF) as u8);
+    }
+}
+
+
 
 type Destination = RegisterIndex;
 type Source1 = RegisterIndex;
@@ -726,6 +751,19 @@ enum INSTRUCTION {
     AUIPC(Destination, u32),
 }
 
+fn init_vm() -> Machine {
+    let cpu = CPU::new();
+    let mem = Memory::new();
+    let mut bus = Bus::new();
+    let m_dev = MappedDevice(Address(0), Address(0x0000ffff), Box::new(mem));
+    bus.add_device(m_dev);
+    Machine { cpu: cpu, bus: bus }
+}
+
+struct Machine{
+    cpu: CPU,
+    bus: Bus
+}
 // generic instruction builders
 fn assemble_r_type(opcode: u32, funct3: u32, funct7: u32, rd: u32, rs1: u32, rs2: u32) -> u32 {
     (opcode & 0x7F)
@@ -800,44 +838,37 @@ use std::fs::File;
 use std::io::Read;
 
 fn main() {
-    let mut cpu = CPU::new();
-    let mut mem = Memory::new();
+    let mut machine = init_vm();
 
-    // 1. Read the raw binary from disk
     let mut file = File::open("main.bin").expect("Failed to open main.bin");
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).expect("Failed to read file");
 
-    // 2. Load it into our emulated RAM starting at address 0
     for (i, &byte) in buffer.iter().enumerate() {
-        mem.write(Address(i as u32), byte);
+        machine.bus.write8(Address(i as u32), byte);
     }
 
-    // 3. Set up a Stack Pointer
-    cpu.registers[2] = (MEMORY_SIZE as u32) - 16;
+    machine.cpu.registers[2] = (MEMORY_SIZE as u32) - 16;
     println!("Executing C program...");
-    
-    // 4. Run the CPU loop
-    // Because the C code ends in an infinite while(1) loop (jumping to itself), 
-    // we need to detect when the PC stops moving forward.
+
     let mut last_pc = 0xFFFF_FFFF;
     let mut cycles = 0;
-    
+
     loop {
-        cpu.step(&mut mem);
+        machine.cpu.step(&mut machine.bus);
         cycles += 1;
-        
-        if cpu.pc.0 == last_pc {
-            println!("CPU halted at pc={}", cpu.pc.0);
+
+        if machine.cpu.pc.0 == last_pc {
+            println!("CPU halted at pc={}", machine.cpu.pc.0);
             break;
         }
-        last_pc = cpu.pc.0;
-        
+        last_pc = machine.cpu.pc.0;
+
         if cycles > 100_000 {
             println!("Timeout reached.");
             break;
         }
     }
 
-    dump(&cpu);
+    dump(&machine.cpu);
 }
