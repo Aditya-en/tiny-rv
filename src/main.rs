@@ -1,17 +1,7 @@
 #![allow(warnings)]
 
-mod cpu;
-mod devices;
-mod bus;
-mod machine;
-mod assembler;
-mod utils;
-
-use cpu::{CPU, Address, RegisterIndex, Immediate, RawInstruction, Opcode, Funct3, Funct7, INSTRUCTION, Destination, Source1, Source2};
-use bus::Bus;
-use machine::{Machine, init_vm};
-use devices::{UART, Device};
-
+use risc_v::devices::{Device, UART};
+use risc_v::cpu::Address;
 
 fn main() {
     let mut uart = UART::new();

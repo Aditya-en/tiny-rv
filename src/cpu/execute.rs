@@ -1,6 +1,6 @@
 use super::types::*;
 use super::cpu::CPU;
-use crate::Bus;
+use crate::bus::Bus;
 
 impl CPU {
     pub fn execute(&mut self, inst: INSTRUCTION, bus: &mut Bus) {
@@ -200,9 +200,6 @@ impl CPU {
                     let current_pc = self.pc.0.wrapping_sub(4);
                     self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
                 }
-            }
-            _ => {
-                println!("instruction not implemented")
             }
         }
         self.registers[0] = 0; // after executing any instruction ensure x0 is always 0

@@ -14,15 +14,6 @@ impl Bus {
         }
     }
 
-    fn get_device(&self, addr: Address) -> (&dyn Device, Address) {
-        for d in &self.devices {
-            if (d.0.0 <= addr.0) && (d.1.0 >= addr.0) {
-                return (d.2.as_ref(), Address(addr.0 - d.0.0));
-            }
-        }
-        panic!("device not found with address {:?}", addr);
-    }
-
     fn get_device_mut(&mut self, addr: Address) -> (&mut dyn Device, Address) {
         for d in &mut self.devices {
             if (d.0.0 <= addr.0) && (d.1.0 >= addr.0) {

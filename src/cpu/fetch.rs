@@ -1,7 +1,7 @@
 
 use super::types::*;
 use super::cpu::CPU;
-use crate::Bus;
+use crate::bus::Bus;
 
 impl CPU {
     pub fn fetch(&mut self, bus: &mut Bus) -> RawInstruction {

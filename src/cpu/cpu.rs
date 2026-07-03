@@ -1,5 +1,5 @@
 use super::types::*;
-use crate::Bus;
+use crate::bus::Bus;
 
 #[derive(Debug)]
 pub struct CPU {
