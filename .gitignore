@@ -1,5 +1,4 @@
 /target
-test*
 *.bin
 *.elf
 *.o

@@ -62,4 +62,9 @@ impl Bus {
         self.write8(addr + Address(2), ((value >> 16) & 0xFF) as u8);
         self.write8(addr + Address(3), ((value >> 24) & 0xFF) as u8);
     }
+    pub fn tick_all(&mut self) {
+        for d in &mut self.devices {
+            d.2.tick();
+        }
+    }
 }
