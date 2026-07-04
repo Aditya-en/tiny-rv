@@ -1,8 +1,9 @@
 use crate::bus::{Bus, MappedDevice};
-use crate::cpu::CPU;
+use crate::cpu::{Address, CPU};
 use crate::devices::Memory;
 use crate::interrupt::InterruptController;
-use crate::platform::{RAM_BASE, RAM_SIZE};
+use crate::platform::{RAM_BASE, RAM_SIZE, SCREEN_BASE, SCREEN_SIZE};
+use crate::devices::screen::Screen;
 
 pub struct Machine {
     pub cpu: CPU,
@@ -19,8 +20,15 @@ impl Machine {
         // RAM
         bus.add_device(MappedDevice(
             RAM_BASE,
-            crate::cpu::Address(RAM_BASE.0 + RAM_SIZE - 1),
+            Address(RAM_BASE.0 + RAM_SIZE - 1),
             Box::new(Memory::new()),
+        ));
+
+        let screen = Screen::new(10_000_000, 60);
+        bus.add_device(MappedDevice(
+            SCREEN_BASE,
+            Address(SCREEN_BASE.0 + SCREEN_SIZE - 1),
+            Box::new(screen),
         ));
 
         Self {
@@ -36,7 +44,7 @@ impl Machine {
         self.cpu.step(&mut self.bus);
 
         if let Some(interrupt) = self.int_controller.next_interrupt() {
-            self.cpu.handle_interrupt(&mut self.bus, interrupt);
+            self.cpu.handle_interrupt(interrupt);
         }
     }
 }

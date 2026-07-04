@@ -28,7 +28,7 @@ impl CPU {
         self.execute(inst, bus);
     }
 
-    pub fn handle_interrupt(&mut self, bus: &mut Bus, interrupt_type: INTERRUPT) {
+    pub fn handle_interrupt(&mut self, interrupt_type: INTERRUPT) {
         if self.interrupt_enabled {
             // self.registers[2] -= 4; // Decrement stack pointer
             // bus.write32(Address(self.registers[2]), self.pc.0); // Assuming x2 is the stack pointer

@@ -14,6 +14,9 @@ pub const UART_SIZE: u32 = 0x100;
 pub const TIMER_BASE: Address = Address(0x1000_0100);
 pub const TIMER_SIZE: u32 = 0x100;
 
+// Screen
+pub const SCREEN_BASE: Address = Address(0x8000_0000);
+pub const SCREEN_SIZE: u32     = 0x0004_C000; // ~307 KiB
 
 /// Interrupt Vector Table
 pub const INTERRUPT_VECTOR_BASE: Address = Address(0x0000_8000);

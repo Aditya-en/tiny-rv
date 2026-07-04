@@ -63,6 +63,16 @@ impl Bus {
         self.write8(addr + Address(2), ((value >> 16) & 0xFF) as u8);
         self.write8(addr + Address(3), ((value >> 24) & 0xFF) as u8);
     }
+    
+    pub fn get_screen_pixels(&self) -> &[u8] {
+        for d in &self.devices {
+            if let Some(buffer) = d.2.get_data() {
+                return buffer;
+            }
+        }
+        panic!("Screen device not found on the bus!");
+    }
+
     pub fn tick_all(&mut self, int_controller: &mut InterruptController) {
         for d in &mut self.devices {
             d.2.tick(int_controller);
