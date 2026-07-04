@@ -2,7 +2,9 @@ use risc_v::assembler;
 use risc_v::bus::{Bus, MappedDevice};
 use risc_v::cpu::Address;
 use risc_v::devices::{Device, Memory, Timer, UART};
+use risc_v::interrupt::InterruptController;
 use risc_v::machine::init_vm;
+use risc_v::platform::uart_registers::*;
 use risc_v::utils;
 
 #[test]
@@ -48,13 +50,13 @@ fn bus_memory_read_write() {
 #[test]
 fn uart_device_io() {
     let mut uart = UART::new();
-    assert_eq!(uart.read8(Address(UART::DATA)), 0);
-    assert_eq!(uart.read8(Address(UART::STATUS)), 0);
+    assert_eq!(uart.read8(Address(DATA)), 0);
+    assert_eq!(uart.read8(Address(STATUS)), 0);
 
     uart.receive_byte(b'H');
-    assert_eq!(uart.read8(Address(UART::STATUS)), 1);
-    assert_eq!(uart.read8(Address(UART::DATA)), b'H');
-    assert_eq!(uart.read8(Address(UART::STATUS)), 0);
+    assert_eq!(uart.read8(Address(STATUS)), 1);
+    assert_eq!(uart.read8(Address(DATA)), b'H');
+    assert_eq!(uart.read8(Address(STATUS)), 0);
 }
 
 #[test]
@@ -99,24 +101,26 @@ fn timer_write_multiple_bytes() {
 #[test]
 fn timer_tick_increments_counter() {
     let mut timer = Timer::new();
+    let mut int_controller = InterruptController::new();
     assert_eq!(timer.read8(Address(0)), 0);
 
-    timer.tick();
+    timer.tick(&mut int_controller);
     assert_eq!(timer.read8(Address(0)), 1);
 
-    timer.tick();
+    timer.tick(&mut int_controller);
     assert_eq!(timer.read8(Address(0)), 2);
 }
 
 #[test]
 fn timer_tick_overflow() {
     let mut timer = Timer::new();
+    let mut int_controller = InterruptController::new();
     timer.write8(Address(0), 0xFF);
     timer.write8(Address(1), 0xFF);
     timer.write8(Address(2), 0xFF);
     timer.write8(Address(3), 0xFF);
 
-    timer.tick();
+    timer.tick(&mut int_controller);
     assert_eq!(timer.read8(Address(0)), 0);
     assert_eq!(timer.read8(Address(1)), 0);
     assert_eq!(timer.read8(Address(2)), 0);
@@ -146,4 +150,60 @@ fn timer_via_bus() {
 
     bus.write8(Address(0x80000001), 0xAA);
     assert_eq!(bus.read8(Address(0x80000001)), 0xAA);
+}
+
+use risc_v::cpu::INTERRUPT;
+use risc_v::platform::RAM_BASE;
+
+#[test]
+fn test_custom_interrupt_mret() {
+    let mut vm = init_vm();
+
+    // Set the base address where our handlers will live
+    vm.cpu.interrupt_base = Address(RAM_BASE.0 + 0x100);
+
+    // --- MAIN PROGRAM (at RAM_BASE) ---
+    // 0x00: ADDI x4, x0, 1 (x4 = 1) -> 0x00100213
+    vm.bus.write32(Address(RAM_BASE.0), 0x00100213);
+    // 0x04: JAL x0, -4     (Infinite loop back to 0x00) -> 0xffdff06f
+    vm.bus.write32(Address(RAM_BASE.0 + 4), 0xffdff06f);
+
+    // --- INTERRUPT HANDLER (at RAM_BASE + 0x100) ---
+    // We assume TIMER interrupt, which goes to interrupt_base + 0x00
+    // 0x100: ADDI x5, x5, 10 (x5 += 10) -> 0x00a28293
+    vm.bus.write32(Address(RAM_BASE.0 + 0x100), 0x00a28293);
+    // 0x104: MRET -> 0x30200073
+    vm.bus.write32(Address(RAM_BASE.0 + 0x104), 0x30200073);
+
+
+    // Start CPU at RAM_BASE
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Step 1: Execute ADDI x4, x0, 1
+    vm.step();
+    assert_eq!(vm.cpu.registers[4], 1);
+    assert_eq!(vm.cpu.pc.0, RAM_BASE.0 + 4);
+
+    // Step 2: Trigger our custom interrupt mid-execution
+    vm.int_controller.add_interrupt(INTERRUPT::TIMER);
+
+    // Step 3: Call step. The infinite loop (JAL) will execute, 
+    // but AFTER it executes, the machine checks for interrupts!
+    vm.step(); 
+    
+    // The CPU should have jumped to the handler!
+    assert_eq!(vm.cpu.pc.0, RAM_BASE.0 + 0x100);
+    assert_eq!(vm.cpu.interrupt_enabled, false);
+    assert_eq!(vm.cpu.mepc, RAM_BASE.0); // It saved the loop target
+
+    // Step 4: Execute the handler's ADDI x5, x5, 10
+    vm.step();
+    assert_eq!(vm.cpu.registers[5], 10); // Handler logic worked!
+
+    // Step 5: Execute MRET
+    vm.step();
+
+    // CPU should be back in the main program, and interrupts re-enabled
+    assert_eq!(vm.cpu.pc.0, RAM_BASE.0);
+    assert_eq!(vm.cpu.interrupt_enabled, true);
 }

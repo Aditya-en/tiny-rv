@@ -1,13 +1,14 @@
 use risc_v::devices::Timer;
 use risc_v::cpu::Address;
 use risc_v::devices::Device;
+use risc_v::interrupt::InterruptController;
 
 fn main() {
     let mut timer = Timer::new();
 
     // Tick the timer a few times
     for _ in 0..5 {
-        timer.tick();
+        timer.tick(&mut InterruptController::new());
     }
 
     // Read the 32-bit counter as four bytes

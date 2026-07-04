@@ -180,4 +180,11 @@ pub enum INSTRUCTION {
     JALR(Destination, Source1, Immediate),
     LUI(Destination, u32),
     AUIPC(Destination, u32),
+    MRET,
+}
+#[derive(PartialEq)]
+pub enum INTERRUPT {
+    TIMER,
+    UART,
+    SOFTWARE,
 }

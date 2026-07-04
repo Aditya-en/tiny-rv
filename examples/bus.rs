@@ -1,6 +1,7 @@
 use risc_v::bus::{Bus, MappedDevice};
 use risc_v::devices::{Memory, UART};
 use risc_v::cpu::Address;
+use risc_v::platform::uart_registers::DATA;
 
 fn main() {
     let mut bus = Bus::new();
@@ -17,9 +18,9 @@ fn main() {
     bus.add_device(MappedDevice(Address(0x1000), Address(0x10ff), Box::new(uart)));
 
     // Guest reads DATA register (should get the injected 'H')
-    let b = bus.read8(Address(0x1000 + UART::DATA));
+    let b = bus.read8(Address(0x1000 + DATA));
     println!("Bus read UART DATA => {}", b as char);
 
     // Guest writes to DATA register (this will print to host stdout via UART::write8)
-    bus.write8(Address(0x1000 + UART::DATA), b'A');
+    bus.write8(Address(0x1000 + DATA), b'A');
 }

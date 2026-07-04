@@ -246,6 +246,17 @@ impl CPU {
             0b0010111 => {
                 return INSTRUCTION::AUIPC(inst.rd(), inst.u_imm());
             }
+            0b1110011 => {
+                let funct3 = inst.funct3();
+                let imm = inst.i_imm(); 
+                
+                // MRET is identified by funct3 == 0 and imm == 0x302 (770)
+                if funct3.0 == 0b000 && imm.0 == 0x302 {
+                    return INSTRUCTION::MRET;
+                } else {
+                    panic!("Unknown SYSTEM instruction or unimplemented CSR instruction");
+                }
+            }
             _ => {
                 panic!("Unknown opcode")
             }

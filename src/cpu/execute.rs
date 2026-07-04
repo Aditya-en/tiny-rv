@@ -201,6 +201,10 @@ impl CPU {
                     self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
                 }
             }
+            INSTRUCTION::MRET => {
+                self.pc = Address(self.mepc);
+                self.interrupt_enabled = true;
+            }
         }
         self.registers[0] = 0; // after executing any instruction ensure x0 is always 0
     }
