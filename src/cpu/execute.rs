@@ -202,12 +202,37 @@ impl CPU {
                     self.pc = Address(current_pc.wrapping_add(imm.0 as u32));
                 }
             }
+            INSTRUCTION::ECALL => {
+                let cause = match self.mode {
+                    PrivilegeMode::User => 8,    // Environment call from U-mode
+                    PrivilegeMode::Machine => 11, // Environment call from M-mode
+                };
+                self.handle_exception(cause);
+                return;
+            }
+
             INSTRUCTION::MRET => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2); 
+                    return;
+                }
+
                 self.pc = Address(self.csr_file.read(MEPC));
                 
                 let mpie = self.csr_file.mpie();
                 self.csr_file.set_mie(mpie);
                 self.csr_file.set_mpie(true);
+
+                let previous_mode = self.csr_file.mpp();
+                self.mode = if previous_mode == 0 {
+                    PrivilegeMode::User
+                } else {
+                    PrivilegeMode::Machine
+                };
+
+                self.csr_file.set_mpp(0);
+                
+                return; 
             }
             INSTRUCTION::MUL(rd, rs1, rs2) => {
                 let x = self.registers[rs1.0 as usize].wrapping_mul(self.registers[rs2.0 as usize]);
@@ -268,11 +293,19 @@ impl CPU {
                 self.registers[rd.0 as usize] = result;
             }
             INSTRUCTION::CSRRW(rd, rs1, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let csr_value = self.csr_file.read(csr_addr as usize);
                 self.csr_file.write(csr_addr as usize, self.registers[rs1.0 as usize]);
                 self.registers[rd.0 as usize] = csr_value;
             }
             INSTRUCTION::CSRRS(rd, rs1, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let old = self.csr_file.read(csr_addr as usize);
                 let value = old | self.registers[rs1.0 as usize];
 
@@ -281,6 +314,10 @@ impl CPU {
             }
 
             INSTRUCTION::CSRRC(rd, rs1, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let old = self.csr_file.read(csr_addr as usize);
                 let value = old & !self.registers[rs1.0 as usize];
 
@@ -289,6 +326,10 @@ impl CPU {
             }
 
             INSTRUCTION::CSRRWI(rd, zimm, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let old = self.csr_file.read(csr_addr as usize);
 
                 self.csr_file.write(csr_addr as usize, zimm as u32);
@@ -296,6 +337,10 @@ impl CPU {
             }
 
             INSTRUCTION::CSRRSI(rd, zimm, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let old = self.csr_file.read(csr_addr as usize);
                 let value = old | (zimm as u32);
 
@@ -304,6 +349,10 @@ impl CPU {
             }
 
             INSTRUCTION::CSRRCI(rd, zimm, csr_addr) => {
+                if self.mode != PrivilegeMode::Machine {
+                    self.handle_exception(2);
+                    return;
+                }
                 let old = self.csr_file.read(csr_addr as usize);
                 let value = old & !(zimm as u32);
 

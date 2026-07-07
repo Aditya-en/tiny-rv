@@ -242,10 +242,12 @@ impl CPU {
 
                 match funct3.0 {
                     0b000 => {
-                        if csr == 0x302 {
+                        if csr == 0x000 {
+                            return INSTRUCTION::ECALL;
+                        } else if csr == 0x302 {
                             return INSTRUCTION::MRET;
                         } else {
-                            panic!("Unknown SYSTEM instruction");
+                            panic!("Unknown SYSTEM instruction or EBREAK");
                         }
                     }
 

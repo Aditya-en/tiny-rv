@@ -1,5 +1,11 @@
 use std::ops::Add;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrivilegeMode {
+    User = 0b00,
+    Machine = 0b11,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Address(pub u32);
 impl Add for Address {
@@ -183,6 +189,7 @@ pub enum INSTRUCTION {
     JALR(Destination, Source1, Immediate),
     LUI(Destination, u32),
     AUIPC(Destination, u32),
+    ECALL,
     MRET,
     MUL(Destination, Source1, Source2),
     MULH(Destination, Source1, Source2),

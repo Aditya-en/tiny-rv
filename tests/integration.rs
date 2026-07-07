@@ -1,11 +1,12 @@
 use risc_v::assembler;
 use risc_v::bus::{Bus, MappedDevice};
-use risc_v::cpu::Address;
+use risc_v::cpu::{Address, PrivilegeMode};
 use risc_v::devices::{Device, Memory, Timer, UART};
 use risc_v::interrupt::InterruptController;
 use risc_v::machine::init_vm;
 use risc_v::platform::uart_registers::*;
 use risc_v::utils;
+use risc_v::cpu::cpu::{MCAUSE, MEPC};
 
 #[test]
 fn assembler_r_type_add() {
@@ -274,6 +275,115 @@ fn test_nested_interrupt_protection() {
     
     // MEPC should remain untouched (still pointing to the original instruction at 0x04)
     assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), RAM_BASE.0 + 4);
+}
+
+#[test]
+fn test_ecall_from_user_mode() {
+    let mut vm = init_vm();
+
+    // 1. Setup the Trap Handler Address
+    let trap_handler_addr = RAM_BASE.0 + 0x100;
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MTVEC, trap_handler_addr);
+
+    // 2. Drop the CPU into User Mode
+    vm.cpu.mode = PrivilegeMode::User;
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // 3. Write an ECALL instruction (opcode: 0b1110011, funct3: 0, csr: 0) -> 0x00000073
+    vm.bus.write32(Address(RAM_BASE.0), 0x00000073);
+
+    // Step the CPU!
+    vm.step();
+
+    // 4. Verify the CPU trapped securely
+    assert_eq!(vm.cpu.mode, PrivilegeMode::Machine, "CPU must escalate to Machine Mode on trap");
+    assert_eq!(vm.cpu.pc.0, trap_handler_addr, "CPU must jump to MTVEC");
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MCAUSE), 8, "MCAUSE must be 8 (U-mode ECALL)");
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), RAM_BASE.0, "MEPC must hold the ECALL address");
+}
+#[test]
+fn test_user_mode_cannot_access_csrs() {
+    let mut vm = init_vm();
+
+    let trap_handler_addr = RAM_BASE.0 + 0x100;
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MTVEC, trap_handler_addr);
+    
+    // Put secret data in MEPC
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MEPC, 0xDEADBEEF); 
+
+    // Drop CPU to User Mode
+    vm.cpu.mode = PrivilegeMode::User;
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Write a CSRRW instruction attempting to read MEPC (0x341) into x3
+    // Instruction: 0x341091f3
+    vm.bus.write32(Address(RAM_BASE.0), 0x341091f3);
+
+    // Step the CPU!
+    vm.step();
+
+    // Verify the CPU blocked it and trapped!
+    assert_eq!(vm.cpu.mode, PrivilegeMode::Machine, "CPU must escalate to handle the exception");
+    assert_eq!(vm.cpu.pc.0, trap_handler_addr, "CPU must jump to handler");
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MCAUSE), 2, "MCAUSE must be 2 (Illegal Instruction)");
+    
+    // Ensure the user register x3 was NOT populated with the secret data
+    assert_eq!(vm.cpu.registers[3], 0, "User program should not have read the CSR");
+}
+
+#[test]
+fn test_user_mode_cannot_execute_mret() {
+    let mut vm = init_vm();
+
+    let trap_handler_addr = RAM_BASE.0 + 0x100;
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MTVEC, trap_handler_addr);
+
+    // Drop CPU to User Mode
+    vm.cpu.mode = PrivilegeMode::User;
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Write an MRET instruction (0x30200073)
+    vm.bus.write32(Address(RAM_BASE.0), 0x30200073);
+
+    // Step the CPU!
+    vm.step();
+
+    // Verify the CPU threw an Illegal Instruction exception
+    assert_eq!(vm.cpu.mode, PrivilegeMode::Machine);
+    assert_eq!(vm.cpu.pc.0, trap_handler_addr);
+    assert_eq!(vm.cpu.csr_file.read(MCAUSE), 2, "MCAUSE must be 2 (Illegal Instruction)");
+}
+
+#[test]
+fn test_mret_restores_privilege_mode() {
+    let mut vm = init_vm();
+
+    // CPU is in Machine mode by default
+    assert_eq!(vm.cpu.mode, PrivilegeMode::Machine);
+
+    // Setup the return state as if we just finished handling an interrupt for a User program
+    let user_program_addr = RAM_BASE.0 + 0x400;
+    vm.cpu.csr_file.write(MEPC, user_program_addr);
+    
+    // Set MPP (Machine Previous Privilege) to User (0)
+    vm.cpu.csr_file.set_mpp(PrivilegeMode::User as u32);
+    
+    // Set MPIE to true (so interrupts turn back on when we return)
+    vm.cpu.csr_file.set_mpie(true);
+
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Write an MRET instruction
+    vm.bus.write32(Address(RAM_BASE.0), 0x30200073);
+
+    // Step the CPU!
+    vm.step();
+
+    // Verify the CPU state was correctly restored
+    assert_eq!(vm.cpu.mode, PrivilegeMode::User, "MRET must restore mode from MPP");
+    assert_eq!(vm.cpu.pc.0, user_program_addr, "MRET must jump to MEPC");
+    assert_eq!(vm.cpu.csr_file.mie_enabled(), true, "MRET must restore MIE from MPIE");
+    assert_eq!(vm.cpu.csr_file.mpp(), 0, "MRET must set MPP back to User (0) per RISC-V spec");
 }
 
 #[test]

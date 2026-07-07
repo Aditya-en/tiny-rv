@@ -7,6 +7,7 @@ pub struct CPU {
     pub registers: [u32; 32],
     pub pc: Address,
     pub csr_file: CSRFile,
+    pub mode: PrivilegeMode,
 }
 
 impl CPU {
@@ -15,6 +16,7 @@ impl CPU {
             registers: [0; 32],
             pc: Address(0x0),
             csr_file: CSRFile::new(),
+            mode: PrivilegeMode::Machine,
         }
     }
 
@@ -26,23 +28,46 @@ impl CPU {
 
     pub fn handle_interrupt(&mut self, interrupt_type: INTERRUPT) {
         if !self.csr_file.mie_enabled() {
-            return; 
+            return;
         }
 
-        let current_mie = self.csr_file.mie_enabled();
-        self.csr_file.set_mpie(current_mie);
-        self.csr_file.set_mie(false);
-
-        self.csr_file.write(MEPC, self.pc.0);
         let cause = match interrupt_type {
             INTERRUPT::TIMER    => 0x80000007,
             INTERRUPT::UART     => 0x8000000B,
             INTERRUPT::SOFTWARE => 0x80000003,
             INTERRUPT::KEYBOARD => 0x8000000C,
         };
+
+        self.enter_trap(cause, self.pc.0);
+    }
+
+    pub fn handle_exception(&mut self, cause: u32) {
+        // Fetch already advanced the PC by 4. 
+        // Synchronous exceptions must save the address of the FAULTING instruction.
+        let faulting_pc = self.pc.0.wrapping_sub(4);
+        
+        self.enter_trap(cause, faulting_pc);
+    }
+
+    fn enter_trap(&mut self, cause: u32, epc: u32) {
+        // 1. Save PC to MEPC
+        self.csr_file.write(MEPC, epc);
+
+        // 2. Set MCAUSE
         self.csr_file.write(MCAUSE, cause);
 
-        // 4. Jump to the trap handler
+        // 3. Save current mode into MPP, and current MIE into MPIE
+        let current_mode = self.mode as u32;
+        self.csr_file.set_mpp(current_mode);
+        
+        let current_mie = self.csr_file.mie_enabled();
+        self.csr_file.set_mpie(current_mie);
+
+        // 4. Disable interrupts and escalate to Machine Mode
+        self.csr_file.set_mie(false);
+        self.mode = PrivilegeMode::Machine;
+
+        // 5. Jump to Trap Vector Base
         self.pc = Address(self.csr_file.read(MTVEC));
     }
 }
@@ -121,6 +146,12 @@ impl CSRFile {
     }
     pub fn mpp(&self) -> u32 {
         (self.read(MSTATUS) & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT
+    }
+    pub fn set_mpp(&mut self, mode: u32) {
+        let mut status = self.read(MSTATUS);
+        status &= !MSTATUS_MPP_MASK;
+        status |= (mode << MSTATUS_MPP_SHIFT) & MSTATUS_MPP_MASK;
+        self.write(MSTATUS, status);
     }
 
 }
