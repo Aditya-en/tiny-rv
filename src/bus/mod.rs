@@ -1,3 +1,4 @@
+use std::any::Any;
 use crate::cpu::Address;
 use crate::devices::Device;
 use crate::interrupt::InterruptController;
@@ -15,13 +16,14 @@ impl Bus {
         }
     }
 
-    fn get_device_mut(&mut self, addr: Address) -> (&mut dyn Device, Address) {
+    fn find_device_mut(&mut self, addr: Address) -> (&mut dyn Device, Address) {
         for d in &mut self.devices {
-            if (d.0.0 <= addr.0) && (d.1.0 >= addr.0) {
+            if d.0.0 <= addr.0 && d.1.0 >= addr.0 {
                 return (d.2.as_mut(), Address(addr.0 - d.0.0));
             }
         }
-        panic!("device not found with address {:?}", addr);
+
+        panic!("device not found");
     }
 
     pub fn add_device(&mut self, m_device: MappedDevice) {
@@ -29,13 +31,13 @@ impl Bus {
     }
 
     pub fn read8(&mut self, addr: Address) -> u8 {
-        let (device, offset) = self.get_device_mut(addr);
+        let (device, offset) = self.find_device_mut(addr);
         device.read8(offset)
     }
 
     pub fn write8(&mut self, addr: Address, data: u8) {
-        let device = self.get_device_mut(addr);
-        device.0.write8(device.1, data);
+        let (device, offset) = self.find_device_mut(addr);
+        device.write8(offset, data);
     }
 
     pub fn read16(&mut self, addr: Address) -> u16 {
@@ -64,18 +66,32 @@ impl Bus {
         self.write8(addr + Address(3), ((value >> 24) & 0xFF) as u8);
     }
     
-    pub fn get_screen_pixels(&self) -> &[u8] {
-        for d in &self.devices {
-            if let Some(buffer) = d.2.get_data() {
-                return buffer;
-            }
-        }
-        panic!("Screen device not found on the bus!");
-    }
 
     pub fn tick_all(&mut self, int_controller: &mut InterruptController) {
         for d in &mut self.devices {
             d.2.tick(int_controller);
         }
+    }
+}
+
+impl Bus {
+    pub fn get_device<T: Any>(&self) -> Option<&T> {
+        for dev in &self.devices {
+            if let Some(device) = dev.2.as_any().downcast_ref::<T>() {
+                return Some(device);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_device_mut<T: Any>(&mut self) -> Option<&mut T> {
+        for dev in &mut self.devices {
+            if let Some(device) = dev.2.as_any_mut().downcast_mut::<T>() {
+                return Some(device);
+            }
+        }
+
+        None
     }
 }

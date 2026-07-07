@@ -63,9 +63,6 @@ impl Device for Screen {
             }
         }
     }
-    fn get_data(&self) -> Option<&[u8]> {
-        Some(&self.front_buffer)
-    }
 
     fn tick(&mut self, _int_controller: &mut InterruptController) {
         self.cycles = self.cycles.wrapping_add(1);
@@ -85,5 +82,12 @@ impl Device for Screen {
                 // int_controller.add_interrupt(INTERRUPT::SOFTWARE); // Or a dedicated GPU interrupt
             }
         }
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

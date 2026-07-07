@@ -1,4 +1,5 @@
-use minifb::{Window, WindowOptions};
+use minifb::{Scale, Window, WindowOptions};
+use risc_v::devices::screen::Screen;
 use risc_v::machine::{init_vm, Machine};
 use risc_v::platform::RAM_BASE;
 use std::fs::File;
@@ -33,7 +34,10 @@ fn main() {
         "RISC-V Emulator",
         WIDTH,
         HEIGHT,
-        WindowOptions::default(),
+        WindowOptions {
+            scale: Scale::X4,
+            ..WindowOptions::default()
+        },
     ).unwrap();
 
     // We need a u32 buffer for minifb (ARGB format)
@@ -49,16 +53,18 @@ fn main() {
 
         // Read the front buffer from your custom Screen device
         // You'll need to add a getter to your Bus to access the Screen's front_buffer safely
-        let screen_device = vm.bus.get_screen_pixels(); // Implement this helper!
-        let raw_pixels = screen_device;
+        if let Some(screen_device) = vm.bus.get_device::<Screen>() { 
+            let raw_pixels = screen_device.front_buffer.as_slice();
 
-        // Convert the emulator's RGBA byte array into minifb's ARGB u32 array
-        for i in 0..(WIDTH * HEIGHT) {
-            let r = raw_pixels[i * 4 + 0] as u32;
-            let g = raw_pixels[i * 4 + 1] as u32;
-            let b = raw_pixels[i * 4 + 2] as u32;
-            
-            display_buffer[i] = (r << 16) | (g << 8) | b;
+            // Convert the emulator's RGBA byte array into minifb's ARGB u32 array
+            for i in 0..(WIDTH * HEIGHT) {
+                let r = raw_pixels[i * 4] as u32;
+                let g = raw_pixels[i * 4 + 1] as u32;
+                let b = raw_pixels[i * 4 + 2] as u32;
+                let a = raw_pixels[i * 4 + 3] as u32;
+
+                display_buffer[i] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
         }
 
         // Push the pixels to the screen
