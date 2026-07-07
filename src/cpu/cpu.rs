@@ -38,6 +38,7 @@ impl CPU {
                 INTERRUPT::TIMER => 0x00,
                 INTERRUPT::UART => 0x04,
                 INTERRUPT::SOFTWARE => 0x08,
+                INTERRUPT::KEYBOARD => 0x0C,
             };
 
             self.pc = Address(handler_address);

@@ -10,6 +10,15 @@ pub const RAM_SIZE: u32     = 0x0001_0000; // 64 KiB
 pub const UART_BASE: Address = Address(0x1000_0000);
 pub const UART_SIZE: u32 = 0x100;
 
+// Keyboard
+pub const KEYBOARD_BASE: Address = Address(0x1000_0200);
+pub const KEYBOARD_SIZE: u32 = 0x100;
+
+pub mod keyboard_registers {
+    pub const DATA: u32 = 0x00;
+    pub const STATUS: u32 = 0x04;
+    pub const CONTROL: u32 = 0x08;
+}
 /// Timer
 pub const TIMER_BASE: Address = Address(0x1000_0100);
 pub const TIMER_SIZE: u32 = 0x100;

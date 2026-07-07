@@ -195,4 +195,5 @@ pub enum INTERRUPT {
     TIMER,
     UART,
     SOFTWARE,
+    KEYBOARD,
 }
