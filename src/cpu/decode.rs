@@ -238,13 +238,72 @@ impl CPU {
             }
             0b1110011 => {
                 let funct3 = inst.funct3();
-                let imm = inst.i_imm(); 
-                
-                // MRET is identified by funct3 == 0 and imm == 0x302 (770)
-                if funct3.0 == 0b000 && imm.0 == 0x302 {
-                    return INSTRUCTION::MRET;
-                } else {
-                    panic!("Unknown SYSTEM instruction or unimplemented CSR instruction");
+                let csr = inst.csr();
+
+                match funct3.0 {
+                    0b000 => {
+                        if csr == 0x302 {
+                            return INSTRUCTION::MRET;
+                        } else {
+                            panic!("Unknown SYSTEM instruction");
+                        }
+                    }
+
+                    // CSRRW
+                    0b001 => {
+                        return INSTRUCTION::CSRRW(
+                            inst.rd(),
+                            inst.rs1(),
+                            csr,
+                        );
+                    }
+
+                    // CSRRS
+                    0b010 => {
+                        return INSTRUCTION::CSRRS(
+                            inst.rd(),
+                            inst.rs1(),
+                            csr,
+                        );
+                    }
+
+                    // CSRRC
+                    0b011 => {
+                        return INSTRUCTION::CSRRC(
+                            inst.rd(),
+                            inst.rs1(),
+                            csr,
+                        );
+                    }
+
+                    // CSRRWI
+                    0b101 => {
+                        return INSTRUCTION::CSRRWI(
+                            inst.rd(),
+                            inst.rs1().0,
+                            csr,
+                        );
+                    }
+
+                    // CSRRSI
+                    0b110 => {
+                        return INSTRUCTION::CSRRSI(
+                            inst.rd(),
+                            inst.rs1().0,
+                            csr,
+                        );
+                    }
+
+                    // CSRRCI
+                    0b111 => {
+                        return INSTRUCTION::CSRRCI(
+                            inst.rd(),
+                            inst.rs1().0,
+                            csr,
+                        );
+                    }
+
+                    _ => panic!("Unknown SYSTEM instruction"),
                 }
             }
             _ => {

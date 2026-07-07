@@ -1,6 +1,7 @@
 use super::types::*;
 use super::cpu::CPU;
 use crate::bus::Bus;
+use crate::cpu::cpu::MEPC;
 
 impl CPU {
     pub fn execute(&mut self, inst: INSTRUCTION, bus: &mut Bus) {
@@ -202,8 +203,11 @@ impl CPU {
                 }
             }
             INSTRUCTION::MRET => {
-                self.pc = Address(self.mepc);
-                self.interrupt_enabled = true;
+                self.pc = Address(self.csr_file.read(MEPC));
+                
+                let mpie = self.csr_file.mpie();
+                self.csr_file.set_mie(mpie);
+                self.csr_file.set_mpie(true);
             }
             INSTRUCTION::MUL(rd, rs1, rs2) => {
                 let x = self.registers[rs1.0 as usize].wrapping_mul(self.registers[rs2.0 as usize]);
@@ -262,6 +266,49 @@ impl CPU {
                 let b = self.registers[rs2.0 as usize];
                 let result = if b == 0 { a } else { a.wrapping_rem(b) };
                 self.registers[rd.0 as usize] = result;
+            }
+            INSTRUCTION::CSRRW(rd, rs1, csr_addr) => {
+                let csr_value = self.csr_file.read(csr_addr as usize);
+                self.csr_file.write(csr_addr as usize, self.registers[rs1.0 as usize]);
+                self.registers[rd.0 as usize] = csr_value;
+            }
+            INSTRUCTION::CSRRS(rd, rs1, csr_addr) => {
+                let old = self.csr_file.read(csr_addr as usize);
+                let value = old | self.registers[rs1.0 as usize];
+
+                self.csr_file.write(csr_addr as usize, value);
+                self.registers[rd.0 as usize] = old;
+            }
+
+            INSTRUCTION::CSRRC(rd, rs1, csr_addr) => {
+                let old = self.csr_file.read(csr_addr as usize);
+                let value = old & !self.registers[rs1.0 as usize];
+
+                self.csr_file.write(csr_addr as usize, value);
+                self.registers[rd.0 as usize] = old;
+            }
+
+            INSTRUCTION::CSRRWI(rd, zimm, csr_addr) => {
+                let old = self.csr_file.read(csr_addr as usize);
+
+                self.csr_file.write(csr_addr as usize, zimm as u32);
+                self.registers[rd.0 as usize] = old;
+            }
+
+            INSTRUCTION::CSRRSI(rd, zimm, csr_addr) => {
+                let old = self.csr_file.read(csr_addr as usize);
+                let value = old | (zimm as u32);
+
+                self.csr_file.write(csr_addr as usize, value);
+                self.registers[rd.0 as usize] = old;
+            }
+
+            INSTRUCTION::CSRRCI(rd, zimm, csr_addr) => {
+                let old = self.csr_file.read(csr_addr as usize);
+                let value = old & !(zimm as u32);
+
+                self.csr_file.write(csr_addr as usize, value);
+                self.registers[rd.0 as usize] = old;
             }
         }
         self.registers[0] = 0; // after executing any instruction ensure x0 is always 0

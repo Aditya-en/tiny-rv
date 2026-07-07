@@ -159,8 +159,11 @@ use risc_v::platform::RAM_BASE;
 fn test_custom_interrupt_mret() {
     let mut vm = init_vm();
 
-    // Set the base address where our handlers will live
-    vm.cpu.interrupt_base = Address(RAM_BASE.0 + 0x100);
+    // Set the base address where our handlers will live using MTVEC
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MTVEC, RAM_BASE.0 + 0x100);
+    
+    // Enable interrupts globally via MSTATUS
+    vm.cpu.csr_file.set_mie(true);
 
     // --- MAIN PROGRAM (at RAM_BASE) ---
     // 0x00: ADDI x4, x0, 1 (x4 = 1) -> 0x00100213
@@ -169,12 +172,10 @@ fn test_custom_interrupt_mret() {
     vm.bus.write32(Address(RAM_BASE.0 + 4), 0xffdff06f);
 
     // --- INTERRUPT HANDLER (at RAM_BASE + 0x100) ---
-    // We assume TIMER interrupt, which goes to interrupt_base + 0x00
     // 0x100: ADDI x5, x5, 10 (x5 += 10) -> 0x00a28293
     vm.bus.write32(Address(RAM_BASE.0 + 0x100), 0x00a28293);
     // 0x104: MRET -> 0x30200073
     vm.bus.write32(Address(RAM_BASE.0 + 0x104), 0x30200073);
-
 
     // Start CPU at RAM_BASE
     vm.cpu.pc = Address(RAM_BASE.0);
@@ -193,8 +194,9 @@ fn test_custom_interrupt_mret() {
     
     // The CPU should have jumped to the handler!
     assert_eq!(vm.cpu.pc.0, RAM_BASE.0 + 0x100);
-    assert_eq!(vm.cpu.interrupt_enabled, false);
-    assert_eq!(vm.cpu.mepc, RAM_BASE.0); // It saved the loop target
+    assert_eq!(vm.cpu.csr_file.mie_enabled(), false, "Interrupts should be disabled inside handler");
+    assert_eq!(vm.cpu.csr_file.mpie(), true, "Previous interrupt state (true) should be saved to MPIE");
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), RAM_BASE.0, "MEPC should store the return address");
 
     // Step 4: Execute the handler's ADDI x5, x5, 10
     vm.step();
@@ -205,7 +207,73 @@ fn test_custom_interrupt_mret() {
 
     // CPU should be back in the main program, and interrupts re-enabled
     assert_eq!(vm.cpu.pc.0, RAM_BASE.0);
-    assert_eq!(vm.cpu.interrupt_enabled, true);
+    assert_eq!(vm.cpu.csr_file.mie_enabled(), true, "MRET should restore MIE from MPIE");
+}
+
+#[test]
+fn test_csr_instructions() {
+    let mut vm = init_vm();
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Initial CPU state
+    vm.cpu.registers[1] = 0xDEADBEEF; // Source register
+    vm.cpu.registers[2] = 0x000000FF; // Another source register
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MEPC, 0x12345678); // Put some data in MEPC
+
+    // --- PROGRAM ---
+    // 0x00: CSRRW x3, x1, MEPC (0x341) -> Read MEPC into x3, write x1 into MEPC
+    // Instruction: 0x341091f3 (funct3=001, rs1=1, rd=3, csr=0x341)
+    vm.bus.write32(Address(RAM_BASE.0), 0x341091f3);
+
+    // 0x04: CSRRS x4, x2, MEPC (0x341) -> Read MEPC into x4, set bits from x2 into MEPC
+    // Instruction: 0x34112273 (funct3=010, rs1=2, rd=4, csr=0x341)
+    vm.bus.write32(Address(RAM_BASE.0 + 4), 0x34112273);
+
+    // Step 1: CSRRW
+    vm.step();
+    assert_eq!(vm.cpu.registers[3], 0x12345678, "CSRRW should load the old CSR value into rd");
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), 0xDEADBEEF, "CSRRW should write rs1 into the CSR");
+
+    // Step 2: CSRRS
+    vm.step();
+    assert_eq!(vm.cpu.registers[4], 0xDEADBEEF, "CSRRS should load the old CSR value into rd");
+    
+    // MEPC should now be 0xDEADBEEF | 0x000000FF = 0xDEADBEFF
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), 0xDEADBEFF, "CSRRS should set the bits specified in rs1");
+}
+
+#[test]
+fn test_nested_interrupt_protection() {
+    let mut vm = init_vm();
+
+    // Setup: Enable interrupts and set trap vector
+    vm.cpu.csr_file.write(risc_v::cpu::cpu::MTVEC, RAM_BASE.0 + 0x100);
+    vm.cpu.csr_file.set_mie(true);
+    vm.cpu.pc = Address(RAM_BASE.0);
+
+    // Program: just a bunch of NOPs (ADDI x0, x0, 0) -> 0x00000013
+    vm.bus.write32(Address(RAM_BASE.0), 0x00000013);
+    vm.bus.write32(Address(RAM_BASE.0 + 4), 0x00000013);
+    
+    // Handler: Also a NOP
+    vm.bus.write32(Address(RAM_BASE.0 + 0x100), 0x00000013);
+
+    // Step 1: Fire an interrupt
+    vm.int_controller.add_interrupt(INTERRUPT::TIMER);
+    vm.step(); // This will execute 0x00 then immediately trap to 0x100
+    
+    assert_eq!(vm.cpu.pc.0, RAM_BASE.0 + 0x100);
+    assert_eq!(vm.cpu.csr_file.mie_enabled(), false, "MIE should be false inside handler");
+
+    // Step 2: Fire ANOTHER interrupt while we are inside the handler
+    vm.int_controller.add_interrupt(INTERRUPT::KEYBOARD);
+    vm.step(); // This executes the handler's NOP
+
+    // The CPU should NOT have trapped again. It should just advance to 0x104
+    assert_eq!(vm.cpu.pc.0, RAM_BASE.0 + 0x104, "CPU should ignore interrupts when MIE is false");
+    
+    // MEPC should remain untouched (still pointing to the original instruction at 0x04)
+    assert_eq!(vm.cpu.csr_file.read(risc_v::cpu::cpu::MEPC), RAM_BASE.0 + 4);
 }
 
 #[test]

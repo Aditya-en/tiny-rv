@@ -64,6 +64,9 @@ impl RawInstruction {
         let code = self.0 >> 20 & 0b1_1111 as u32;
         RegisterIndex::new(code as u8)
     }
+    pub fn csr(&self) -> u16 {
+        ((self.0 >> 20) & 0xFFF) as u16
+    }
     pub fn i_imm(&self) -> Immediate {
         let code = self.0 >> 20 & 0b1111_1111_1111 as u32;
         Immediate::new(code as u16)
@@ -189,6 +192,13 @@ pub enum INSTRUCTION {
     DIVU(Destination, Source1, Source2),
     REM(Destination, Source1, Source2),
     REMU(Destination, Source1, Source2),
+    CSRRW(Destination, Source1, u16),
+    CSRRS(Destination, Source1, u16),
+    CSRRC(Destination, Source1, u16),
+
+    CSRRWI(Destination, u8, u16),
+    CSRRSI(Destination, u8, u16),
+    CSRRCI(Destination, u8, u16),
 }
 #[derive(PartialEq)]
 pub enum INTERRUPT {
