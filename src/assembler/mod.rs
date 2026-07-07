@@ -108,3 +108,29 @@ pub fn assemble_or(rd: u32, rs1: u32, rs2: u32) -> u32 {
 pub fn assemble_and(rd: u32, rs1: u32, rs2: u32) -> u32 {
     assemble_r_type(0b0110011, 0b111, 0b0000000, rd, rs1, rs2)
 }
+
+// M-Extension (Opcode: 0b0110011, Funct7: 0b0000001)
+pub fn assemble_mul(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b000, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_mulh(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b001, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_mulhsu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b010, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_mulhu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b011, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_div(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b100, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_divu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b101, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_rem(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b110, 0b0000001, rd, rs1, rs2)
+}
+pub fn assemble_remu(rd: u32, rs1: u32, rs2: u32) -> u32 {
+    assemble_r_type(0b0110011, 0b111, 0b0000001, rd, rs1, rs2)
+}

@@ -2,5 +2,7 @@
 *.bin
 *.elf
 *.o
-main.c
+*.c
 *.ld
+*.txt
+*.s

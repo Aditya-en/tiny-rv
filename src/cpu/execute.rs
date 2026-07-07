@@ -205,6 +205,64 @@ impl CPU {
                 self.pc = Address(self.mepc);
                 self.interrupt_enabled = true;
             }
+            INSTRUCTION::MUL(rd, rs1, rs2) => {
+                let x = self.registers[rs1.0 as usize].wrapping_mul(self.registers[rs2.0 as usize]);
+                self.registers[rd.0 as usize] = x;
+            }
+            INSTRUCTION::MULH(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize] as i32 as i64;
+                let b = self.registers[rs2.0 as usize] as i32 as i64;
+                let result = (a * b) >> 32;
+                self.registers[rd.0 as usize] = result as u32;
+            }
+            INSTRUCTION::MULHSU(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize] as i32 as i64;
+                let b = self.registers[rs2.0 as usize] as u64 as i64; // zero-extend unsigned
+                let result = (a * b) >> 32;
+                self.registers[rd.0 as usize] = result as u32;
+            }
+            INSTRUCTION::MULHU(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize] as u64;
+                let b = self.registers[rs2.0 as usize] as u64;
+                let result = (a * b) >> 32;
+                self.registers[rd.0 as usize] = result as u32;
+            }
+            INSTRUCTION::DIV(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize] as i32;
+                let b = self.registers[rs2.0 as usize] as i32;
+                let result = if b == 0 {
+                    -1i32
+                } else if a == i32::MIN && b == -1 {
+                    i32::MIN
+                } else {
+                    a.wrapping_div(b)
+                };
+                self.registers[rd.0 as usize] = result as u32;
+            }
+            INSTRUCTION::DIVU(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize];
+                let b = self.registers[rs2.0 as usize];
+                let result = if b == 0 { u32::MAX } else { a.wrapping_div(b) };
+                self.registers[rd.0 as usize] = result;
+            }
+            INSTRUCTION::REM(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize] as i32;
+                let b = self.registers[rs2.0 as usize] as i32;
+                let result = if b == 0 {
+                    a
+                } else if a == i32::MIN && b == -1 {
+                    0
+                } else {
+                    a.wrapping_rem(b)
+                };
+                self.registers[rd.0 as usize] = result as u32;
+            }
+            INSTRUCTION::REMU(rd, rs1, rs2) => {
+                let a = self.registers[rs1.0 as usize];
+                let b = self.registers[rs2.0 as usize];
+                let result = if b == 0 { a } else { a.wrapping_rem(b) };
+                self.registers[rd.0 as usize] = result;
+            }
         }
         self.registers[0] = 0; // after executing any instruction ensure x0 is always 0
     }

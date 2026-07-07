@@ -85,103 +85,93 @@ impl CPU {
                 match funct3.0 {
                     0b000 => {
                         let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let s1 = inst.rs1();
+                        let s2 = inst.rs2();
                         match funct7.0 {
-                            0b0000000 => {
-                                let rd = inst.rd();
-                                let s1 = inst.rs1();
-                                let s2 = inst.rs2();
-                                return INSTRUCTION::ADD(rd, s1, s2)
-                            }
-                            0b0100000 => {
-                                let rd = inst.rd();
-                                let s1 = inst.rs1();
-                                let s2 = inst.rs2();
-                                return INSTRUCTION::SUB(rd, s1, s2)
-                            }
-                            _ => {
-                                panic!("unknown funct7 in funct3 0b0 opcode 0b0110011")
-                            }
+                            0b0000000 => return INSTRUCTION::ADD(rd, s1, s2),
+                            0b0100000 => return INSTRUCTION::SUB(rd, s1, s2),
+                            0b0000001 => return INSTRUCTION::MUL(rd, s1, s2),
+                            _ => panic!("unknown funct7 in funct3 0b0 opcode 0b0110011"),
                         }
                     }
                     0b100 => {
                         let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let s1 = inst.rs1();
+                        let s2 = inst.rs2();
                         match funct7.0 {
-                            0b0 => {
-                                let rd = inst.rd();
-                                let s1 = inst.rs1();
-                                let s2 = inst.rs2();
-                                return INSTRUCTION::XOR(rd, s1, s2)
-                            }
-                            _ => {
-                                panic!("unknown funct7 in 0b100 and opcode 0b0110011")
-                            }
+                            0b0 => return INSTRUCTION::XOR(rd, s1, s2),
+                            0b0000001 => return INSTRUCTION::DIV(rd, s1, s2),
+                            _ => panic!("unknown funct7 in 0b100 and opcode 0b0110011"),
                         }
                     }
                     0b110 => {
                         let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let s1 = inst.rs1();
+                        let s2 = inst.rs2();
                         match funct7.0 {
-                            0b0 => {
-                                let rd = inst.rd();
-                                let s1 = inst.rs1();
-                                let s2 = inst.rs2();
-                                return INSTRUCTION::OR(rd, s1, s2)
-                            }
-                            _ => {
-                                panic!("unknown funct7 in 0b110 and opcode 0b0110011")
-                            }
+                            0b0 => return INSTRUCTION::OR(rd, s1, s2),
+                            0b0000001 => return INSTRUCTION::REM(rd, s1, s2),
+                            _ => panic!("unknown funct7 in 0b110 and opcode 0b0110011"),
                         }
                     }
                     0b111 => {
                         let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let s1 = inst.rs1();
+                        let s2 = inst.rs2();
                         match funct7.0 {
-                            0b0 => {
-                                let rd = inst.rd();
-                                let s1 = inst.rs1();
-                                let s2 = inst.rs2();
-                                return INSTRUCTION::AND(rd, s1, s2)
-                            }
-                            _ => {
-                                panic!("unknown funct7 in 0b111 and opcode 0b0110011")
-                            }
+                            0b0 => return INSTRUCTION::AND(rd, s1, s2),
+                            0b0000001 => return INSTRUCTION::REMU(rd, s1, s2),
+                            _ => panic!("unknown funct7 in 0b111 and opcode 0b0110011"),
                         }
                     }
                     0b001 => {
+                        let funct7 = inst.funct7();
                         let rd = inst.rd();
                         let rs1 = inst.rs1();
                         let rs2 = inst.rs2();
-                        return INSTRUCTION::SLL(rd, rs1, rs2)
+                        match funct7.0 {
+                            0b0000001 => return INSTRUCTION::MULH(rd, rs1, rs2),
+                            _ => return INSTRUCTION::SLL(rd, rs1, rs2),
+                        }
                     }
                     0b101 => {
                         let funct7 = inst.funct7();
+                        let rd = inst.rd();
+                        let rs1 = inst.rs1();
+                        let rs2 = inst.rs2();
                         match funct7.0 {
-                            0b0 => {
-                                let rd = inst.rd();
-                                let rs1 = inst.rs1();
-                                let rs2 = inst.rs2();
-                                return INSTRUCTION::SRL(rd, rs1, rs2)
-                            }
-                            0b0100000 => {
-                                let rd = inst.rd();
-                                let rs1 = inst.rs1();
-                                let rs2 = inst.rs2();
-                                return INSTRUCTION::SRA(rd, rs1, rs2)
-                            }
-                            _ => {
-                                panic!("unknown funct7 {:08b} for funct3 {:08b} for opcode {:08b}", funct7.0, funct3.0, opcode.0)
-                            }
+                            0b0 => return INSTRUCTION::SRL(rd, rs1, rs2),
+                            0b0100000 => return INSTRUCTION::SRA(rd, rs1, rs2),
+                            0b0000001 => return INSTRUCTION::DIVU(rd, rs1, rs2),
+                            _ => panic!(
+                                "unknown funct7 {:08b} for funct3 {:08b} for opcode {:08b}",
+                                funct7.0, funct3.0, opcode.0
+                            ),
                         }
                     }
                     0b010 => {
+                        let funct7 = inst.funct7();
                         let rd = inst.rd();
                         let rs1 = inst.rs1();
                         let rs2 = inst.rs2();
-                        return INSTRUCTION::SLT(rd, rs1, rs2)
+                        match funct7.0 {
+                            0b0000001 => return INSTRUCTION::MULHSU(rd, rs1, rs2),
+                            _ => return INSTRUCTION::SLT(rd, rs1, rs2),
+                        }
                     }
                     0b011 => {
+                        let funct7 = inst.funct7();
                         let rd = inst.rd();
                         let rs1 = inst.rs1();
                         let rs2 = inst.rs2();
-                        return INSTRUCTION::SLT(rd, rs1, rs2)
+                        match funct7.0 {
+                            0b0000001 => return INSTRUCTION::MULHU(rd, rs1, rs2),
+                            _ => return INSTRUCTION::SLTU(rd, rs1, rs2),
+                        }
                     }
                     _ => {
                         panic!("unknown funct3 with opcode 0b0110011")

@@ -27,7 +27,7 @@ fn main() {
     let mut vm = init_vm();
     
     // Load your compiled C program into RAM
-    load_binary(&mut vm, "program.bin", RAM_BASE.0);
+    load_binary(&mut vm, "test.bin", RAM_BASE.0);
 
     // Create a physical window on your real computer
     let mut window = Window::new(

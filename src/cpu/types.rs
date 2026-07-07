@@ -181,6 +181,14 @@ pub enum INSTRUCTION {
     LUI(Destination, u32),
     AUIPC(Destination, u32),
     MRET,
+    MUL(Destination, Source1, Source2),
+    MULH(Destination, Source1, Source2),
+    MULHSU(Destination, Source1, Source2),
+    MULHU(Destination, Source1, Source2),
+    DIV(Destination, Source1, Source2),
+    DIVU(Destination, Source1, Source2),
+    REM(Destination, Source1, Source2),
+    REMU(Destination, Source1, Source2),
 }
 #[derive(PartialEq)]
 pub enum INTERRUPT {

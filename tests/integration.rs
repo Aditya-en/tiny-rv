@@ -207,3 +207,189 @@ fn test_custom_interrupt_mret() {
     assert_eq!(vm.cpu.pc.0, RAM_BASE.0);
     assert_eq!(vm.cpu.interrupt_enabled, true);
 }
+
+#[test]
+fn assembler_r_type_mul() {
+    let encoded = assembler::assemble_mul(1, 2, 3);
+    let expected = 0b0000001_00011_00010_000_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_mulh() {
+    let encoded = assembler::assemble_mulh(1, 2, 3);
+    let expected = 0b0000001_00011_00010_001_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_mulhsu() {
+    let encoded = assembler::assemble_mulhsu(1, 2, 3);
+    let expected = 0b0000001_00011_00010_010_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_mulhu() {
+    let encoded = assembler::assemble_mulhu(1, 2, 3);
+    let expected = 0b0000001_00011_00010_011_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_div() {
+    let encoded = assembler::assemble_div(1, 2, 3);
+    let expected = 0b0000001_00011_00010_100_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_divu() {
+    let encoded = assembler::assemble_divu(1, 2, 3);
+    let expected = 0b0000001_00011_00010_101_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_rem() {
+    let encoded = assembler::assemble_rem(1, 2, 3);
+    let expected = 0b0000001_00011_00010_110_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn assembler_r_type_remu() {
+    let encoded = assembler::assemble_remu(1, 2, 3);
+    let expected = 0b0000001_00011_00010_111_00001_0110011;
+    assert_eq!(encoded, expected);
+}
+
+#[test]
+fn machine_mul() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 6;
+    machine.cpu.registers[2] = 7;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_mul(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    assert_eq!(machine.cpu.registers[3], 42);
+}
+
+#[test]
+fn machine_div() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 84;
+    machine.cpu.registers[2] = 2;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_div(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    assert_eq!(machine.cpu.registers[3], 42);
+}
+
+#[test]
+fn machine_divu() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 100;
+    machine.cpu.registers[2] = 4;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_divu(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    assert_eq!(machine.cpu.registers[3], 25);
+}
+
+#[test]
+fn machine_rem() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 100;
+    machine.cpu.registers[2] = 6;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_rem(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    assert_eq!(machine.cpu.registers[3], 4);
+}
+
+#[test]
+fn machine_remu() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 100;
+    machine.cpu.registers[2] = 7;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_remu(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    assert_eq!(machine.cpu.registers[3], 2);
+}
+
+#[test]
+fn machine_mulh() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 0xffff_fffe; // -2
+    machine.cpu.registers[2] = 3;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_mulh(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    // (-2 * 3) = -6 = 0xfffffffffffffffA
+    assert_eq!(machine.cpu.registers[3], 0xffff_ffff);
+}
+#[test]
+fn machine_mulhu() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 0xffff_ffff;
+    machine.cpu.registers[2] = 2;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_mulhu(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    // 0xffffffff * 2 = 0x1fffffffe
+    assert_eq!(machine.cpu.registers[3], 1);
+}
+
+#[test]
+fn machine_mulhsu() {
+    let mut machine = init_vm();
+
+    machine.cpu.registers[1] = 0xffff_fffe; // -2
+    machine.cpu.registers[2] = 2;
+
+    machine
+        .bus
+        .write32(Address(0), assembler::assemble_mulhsu(3, 1, 2));
+
+    machine.cpu.step(&mut machine.bus);
+
+    // (-2 * 2) = -4 -> high 32 bits = 0xffffffff
+    assert_eq!(machine.cpu.registers[3], 0xffff_ffff);
+}
