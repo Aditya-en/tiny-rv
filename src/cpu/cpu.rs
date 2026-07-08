@@ -21,9 +21,16 @@ impl CPU {
     }
 
     pub fn step(&mut self, bus: &mut Bus) {
-        let raw_inst = self.fetch(bus);
-        let inst = Self::decode(raw_inst);
-        self.execute(inst, bus);
+        match self.fetch(bus) {
+            Ok(raw_inst) => {
+                let inst = Self::decode(raw_inst);
+                self.execute(inst, bus);
+            }
+            Err(cause) => {
+                // fetch fails (Instruction Page Fault), trap immediately!
+                self.handle_exception(cause);
+            }
+        }
     }
 
     pub fn handle_interrupt(&mut self, interrupt_type: INTERRUPT) {
@@ -95,7 +102,7 @@ pub const MSTATUS_MPIE: u32 = 1 << 7;
 
 pub const MSTATUS_MPP_SHIFT: u32 = 11;
 pub const MSTATUS_MPP_MASK: u32 = 0b11 << MSTATUS_MPP_SHIFT;
-
+pub const SATP: usize = 0x180;
 
 #[derive(Debug)]
 pub struct CSRFile {

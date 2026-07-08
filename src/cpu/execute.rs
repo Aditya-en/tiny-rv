@@ -2,9 +2,16 @@ use super::types::*;
 use super::cpu::CPU;
 use crate::bus::Bus;
 use crate::cpu::cpu::MEPC;
+use crate::mmu::{MMU, AccessType};
+
+pub const EXC_ECALL_U: u32 = 8;
+pub const EXC_ECALL_S: u32 = 9;
+pub const EXC_ECALL_M: u32 = 11;
 
 impl CPU {
     pub fn execute(&mut self, inst: INSTRUCTION, bus: &mut Bus) {
+        let satp = self.csr_file.read(0x180);
+
         match inst {
             INSTRUCTION::ADDI(rd, rs1, imm ) => {
                 let x = self.registers[rs1.0 as usize]
@@ -103,44 +110,173 @@ impl CPU {
                 }
             }
             INSTRUCTION::LB(rd, rs1, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                let val = bus.read8(addr);
-                // Cast to i8 to preserve sign, then up to i32/u32 for sign-extension
-                self.registers[rd.0 as usize] = (val as i8) as i32 as u32; 
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Load,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                let val = bus.read8(Address(paddr));
+                self.registers[rd.0 as usize] = (val as i8) as i32 as u32;
             }
             INSTRUCTION::LH(rd, rs1, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                let val = bus.read16(addr);
+            let vaddr = self.registers[rs1.0 as usize]
+                .wrapping_add(imm.0 as u32);
+
+            let paddr = match MMU::translate(
+                vaddr,
+                &AccessType::Load,
+                satp,
+                self.mode,
+                bus,
+            ) {
+                Ok(addr) => addr,
+                Err(cause) => {
+                    self.handle_exception(cause);
+                    return;
+                }
+            };
+
+            let val = bus.read16(Address(paddr));
                 // Cast to i16 for sign-extension
                 self.registers[rd.0 as usize] = (val as i16) as i32 as u32; 
             }
             INSTRUCTION::LW(rd, rs1, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                self.registers[rd.0 as usize] = bus.read32(addr);
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Load,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                let val = bus.read32(Address(paddr));
+                self.registers[rd.0 as usize] = val;
             }
             INSTRUCTION::LBU(rd, rs1, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                // Unsigned: No sign extension, just pad with zeros
-                self.registers[rd.0 as usize] = bus.read8(addr) as u32; 
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Load,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                let val = bus.read8(Address(paddr));
+                self.registers[rd.0 as usize] = val as u32;
             }
             INSTRUCTION::LHU(rd, rs1, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
-                self.registers[rd.0 as usize] = bus.read16(addr) as u32; 
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Load,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                let val = bus.read16(Address(paddr));
+                self.registers[rd.0 as usize] = val as u32;
             }
             INSTRUCTION::SB(rs1, rs2, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = (self.registers[rs2.0 as usize] & 0xFF) as u8;
-                bus.write8(addr, val);
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Store,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                bus.write8(Address(paddr), val);
             }
             INSTRUCTION::SH(rs1, rs2, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = (self.registers[rs2.0 as usize] & 0xFFFF) as u16;
-                bus.write16(addr, val);
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Store,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                bus.write16(Address(paddr), val);
             }
             INSTRUCTION::SW(rs1, rs2, imm) => {
-                let addr = Address(self.registers[rs1.0 as usize].wrapping_add(imm.0 as u32));
                 let val = self.registers[rs2.0 as usize];
-                bus.write32(addr, val);
+                let vaddr = self.registers[rs1.0 as usize]
+                    .wrapping_add(imm.0 as u32);
+
+                let paddr = match MMU::translate(
+                    vaddr,
+                    &AccessType::Store,
+                    satp,
+                    self.mode,
+                    bus,
+                ) {
+                    Ok(addr) => addr,
+                    Err(cause) => {
+                        self.handle_exception(cause);
+                        return;
+                    }
+                };
+
+                bus.write32(Address(paddr), val);            
             }
             INSTRUCTION::LUI(rd, imm) => {
                 // LUI places the U-immediate value in the top 20 bits of the destination register
@@ -204,9 +340,11 @@ impl CPU {
             }
             INSTRUCTION::ECALL => {
                 let cause = match self.mode {
-                    PrivilegeMode::User => 8,    // Environment call from U-mode
-                    PrivilegeMode::Machine => 11, // Environment call from M-mode
+                    PrivilegeMode::User => EXC_ECALL_U,
+                    PrivilegeMode::Supervisor => EXC_ECALL_S,
+                    PrivilegeMode::Machine => EXC_ECALL_M,
                 };
+
                 self.handle_exception(cause);
                 return;
             }

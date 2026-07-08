@@ -32,6 +32,24 @@ pub fn assemble_b_type(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -
         | (imm12 << 31)
 }
 
+pub fn assemble_s_type(opcode: u32, funct3: u32, rs1: u32, rs2: u32, imm: u32) -> u32 {
+    let imm4_0 = imm & 0x1f;
+    let imm11_5 = (imm >> 5) & 0x7f;
+
+    (opcode & 0x7f)
+        | (imm4_0 << 7)
+        | ((funct3 & 0x7) << 12)
+        | ((rs1 & 0x1f) << 15)
+        | ((rs2 & 0x1f) << 20)
+        | (imm11_5 << 25)
+}
+
+pub fn assemble_u_type(opcode: u32, rd: u32, imm: u32) -> u32 {
+    (opcode & 0x7f)
+        | ((rd & 0x1f) << 7)
+        | (imm & 0xfffff000)
+}
+
 pub fn assemble_bne(rs1: u32, rs2: u32, imm: i32) -> u32 {
     // We cast to u32 so the bitwise ops in assemble_b_type handle the sign correctly
     assemble_b_type(0b1100011, 0b001, rs1, rs2, imm as u32)
@@ -133,4 +151,52 @@ pub fn assemble_rem(rd: u32, rs1: u32, rs2: u32) -> u32 {
 }
 pub fn assemble_remu(rd: u32, rs1: u32, rs2: u32) -> u32 {
     assemble_r_type(0b0110011, 0b111, 0b0000001, rd, rs1, rs2)
+}
+
+pub fn assemble_lb(rd: u32, rs1: u32, imm: u32) -> u32 {
+    assemble_i_type(0b0000011, 0b000, rd, rs1, imm)
+}
+
+pub fn assemble_lh(rd: u32, rs1: u32, imm: u32) -> u32 {
+    assemble_i_type(0b0000011, 0b001, rd, rs1, imm)
+}
+
+pub fn assemble_lw(rd: u32, rs1: u32, imm: u32) -> u32 {
+    assemble_i_type(0b0000011, 0b010, rd, rs1, imm)
+}
+
+pub fn assemble_lbu(rd: u32, rs1: u32, imm: u32) -> u32 {
+    assemble_i_type(0b0000011, 0b100, rd, rs1, imm)
+}
+
+pub fn assemble_lhu(rd: u32, rs1: u32, imm: u32) -> u32 {
+    assemble_i_type(0b0000011, 0b101, rd, rs1, imm)
+}
+
+pub fn assemble_sb(rs1: u32, rs2: u32, imm: u32) -> u32 {
+    assemble_s_type(0b0100011, 0b000, rs1, rs2, imm)
+}
+
+pub fn assemble_sh(rs1: u32, rs2: u32, imm: u32) -> u32 {
+    assemble_s_type(0b0100011, 0b001, rs1, rs2, imm)
+}
+
+pub fn assemble_sw(rs1: u32, rs2: u32, imm: u32) -> u32 {
+    assemble_s_type(0b0100011, 0b010, rs1, rs2, imm)
+}
+
+pub fn assemble_lui(rd: u32, imm: u32) -> u32 {
+    assemble_u_type(0b0110111, rd, imm)
+}
+
+pub fn assemble_auipc(rd: u32, imm: u32) -> u32 {
+    assemble_u_type(0b0010111, rd, imm)
+}
+
+pub fn assemble_ecall() -> u32 {
+    0x00000073
+}
+
+pub fn assemble_mret() -> u32 {
+    0x30200073
 }

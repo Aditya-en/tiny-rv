@@ -4,6 +4,7 @@ use std::ops::Add;
 pub enum PrivilegeMode {
     User = 0b00,
     Machine = 0b11,
+    Supervisor = 0b01,
 }
 
 #[derive(Debug, Clone, Copy)]
